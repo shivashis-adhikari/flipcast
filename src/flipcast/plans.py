@@ -8,6 +8,7 @@ database. a switch is a change of shape.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from collections import Counter
@@ -53,6 +54,11 @@ def explain(conn: psycopg.Connection[Any], r: Rendered) -> dict[str, Any]:
             if r.values is not None:
                 cur.execute(f"DEALLOCATE {_STMT}")
     except psycopg.Error as e:
+        if r.values is not None:
+            # prepared statements survive a rollback. leave one behind and
+            # every later PREPARE on this connection fails with "already exists"
+            with contextlib.suppress(psycopg.Error):
+                conn.execute(f"DEALLOCATE {_STMT}")
         raise ExplainError(str(e).strip().splitlines()[0]) from e
     assert row is not None
     doc = row[0]

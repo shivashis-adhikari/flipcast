@@ -218,6 +218,7 @@ def _verify(
     bad = p.switch.after.shape
     idx_name = f"flipcast_fix_{abs(hash((p.query.name, f.sql))) % 10**8}"
     pts: list[Point] = []
+    previous: str | None = None
     try:
         if f.kind == "index" and f.index is not None:
             schema, table, cols, include = f.index
@@ -238,6 +239,8 @@ def _verify(
                 )
             conn.execute(stmt)
         elif f.kind == "setting" and f.setting is not None:
+            row = conn.execute("select current_setting(%s)", (f.setting[0],)).fetchone()
+            previous = row[0] if row else None
             conn.execute("select set_config(%s, %s, false)", f.setting)
         for i, st in enumerate(steps):
             shadow.load(conn, st)
@@ -254,8 +257,9 @@ def _verify(
                     sql.Identifier(f.index[0] if f.index else "public"), sql.Identifier(idx_name)
                 )
             )
-        elif f.kind == "setting" and f.setting is not None:
-            conn.execute(sql.SQL("RESET {}").format(sql.Identifier(f.setting[0])))
+        elif f.kind == "setting" and f.setting is not None and previous is not None:
+            # back to the source's value, not the shadow server's default
+            conn.execute("select set_config(%s, %s, false)", (f.setting[0], previous))
 
     k = p.switch.step
     hit = next((pt.step for pt in pts if pt.shape == bad), None)

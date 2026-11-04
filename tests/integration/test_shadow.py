@@ -136,3 +136,22 @@ def test_bad_stats_are_reported_not_swallowed(snapshot, shadow_db):
     with pytest.raises(shadow.ShadowError):
         shadow_db.load(conn, snap)
     conn.close()
+
+
+def test_failed_explain_does_not_poison_the_connection(snapshot, shadow_db):
+    # prepared statements outlive a rollback; a failed EXECUTE must not leave one behind
+    _, snap = snapshot
+    shadow_db.build(snap)
+    conn = shadow_db.session(snap.settings)
+    shadow_db.load(conn, snap)
+    bad = workload.Rendered("select * from ev where user_id = $1", ["not a number"])
+    with pytest.raises(plans.ExplainError):
+        plans.explain(conn, bad)
+    good = workload.Rendered("select * from ev where user_id = $1", [42])
+    assert plans.explain(conn, good)["Node Type"]
+    conn.close()
+
+
+def test_shadow_refuses_unsafe_database_names(admin_dsn):
+    with pytest.raises(shadow.ShadowError):
+        shadow.Shadow(admin_dsn, "app")

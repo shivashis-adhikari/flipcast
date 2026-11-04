@@ -37,6 +37,8 @@ class ShadowTable:
     name: str
     relkind: str
     columns: list[str] = field(default_factory=list)
+    # inherited stats only exist for partitioned tables and inheritance parents
+    has_children: bool = False
     indexes: list[str] = field(default_factory=list)
 
 
@@ -48,6 +50,10 @@ class Shadow:
     def __init__(self, admin_dsn: str, database: str = "flipcast_shadow"):
         if not admin_dsn:
             raise ShadowError("no shadow dsn (set [shadow] dsn or FLIPCAST_SHADOW_DSN)")
+        if not database.startswith("flipcast"):
+            # build() drops this database WITH (FORCE). refuse names that could
+            # belong to anything else.
+            raise ShadowError(f"shadow database name {database!r} must start with 'flipcast'")
         self.admin_dsn = admin_dsn
         self.database = database
         self.dsn = make_conninfo(admin_dsn, dbname=database)
@@ -142,6 +148,23 @@ class Shadow:
                 f"stats restore complained {len(warnings)} times, first: {warnings[0]}"
             )
 
+    def load_column(
+        self, conn: psycopg.Connection[Any], qualname: str, c: ColumnStats, version: int
+    ) -> None:
+        """Replace one column's stats, for callers that change a single column."""
+        st = self.catalog[qualname]
+        notes = db.notices(conn)
+        notes.take()
+        with conn.transaction(), conn.cursor() as cur:
+            cur.execute(
+                "select pg_catalog.pg_clear_attribute_stats(%s, %s, %s, %s)",
+                (st.schema, st.name, c.name, c.inherited),
+            )
+            _restore_column(cur, st.schema, st.name, c, version)
+        warnings = notes.take()
+        if warnings:
+            raise ShadowError(f"stats restore complained: {warnings[0]}")
+
     def drop(self) -> None:
         with db.connect(self.admin_dsn, application_name="flipcast-admin") as admin:
             admin.execute(
@@ -161,14 +184,14 @@ def apply_settings(conn: psycopg.Connection[Any], settings: dict[str, str]) -> N
 
 def _read_catalog(conn: psycopg.Connection[Any]) -> dict[str, ShadowTable]:
     out: dict[str, ShadowTable] = {}
-    for oid, nsp, rel, kind in conn.execute(
-        "select c.oid, n.nspname, c.relname, c.relkind from pg_class c"
+    for oid, nsp, rel, kind, kids in conn.execute(
+        "select c.oid, n.nspname, c.relname, c.relkind, c.relhassubclass from pg_class c"
         " join pg_namespace n on n.oid = c.relnamespace"
         " where c.relkind in ('r', 'm', 'p')"
         " and n.nspname not in ('pg_catalog', 'information_schema')"
         " and n.nspname !~ '^pg_(toast|temp)'"
     ).fetchall():
-        st = ShadowTable(nsp, rel, kind)
+        st = ShadowTable(nsp, rel, kind, has_children=bool(kids) or kind == "p")
         st.columns = [
             r[0]
             for r in conn.execute(
@@ -189,6 +212,10 @@ def _read_catalog(conn: psycopg.Connection[Any]) -> dict[str, ShadowTable]:
     return out
 
 
+def _inherited(st: ShadowTable) -> tuple[bool, ...]:
+    return (False, True) if st.has_children else (False,)
+
+
 def _call(cur: psycopg.Cursor[Any], fn: str, args: list[tuple[str, Any, str]]) -> None:
     parts, params = [], []
     for key, value, typ in args:
@@ -202,7 +229,7 @@ def _call(cur: psycopg.Cursor[Any], fn: str, args: list[tuple[str, Any, str]]) -
 def _clear_table(cur: psycopg.Cursor[Any], st: ShadowTable) -> None:
     cur.execute("select pg_catalog.pg_clear_relation_stats(%s, %s)", (st.schema, st.name))
     for col in st.columns:
-        for inh in (False, True):
+        for inh in _inherited(st):
             cur.execute(
                 "select pg_catalog.pg_clear_attribute_stats(%s, %s, %s, %s)",
                 (st.schema, st.name, col, inh),
@@ -247,7 +274,7 @@ def _restore_table(cur: psycopg.Cursor[Any], st: ShadowTable, t: TableStats, ver
 
     have = {c.key: c for c in t.columns}
     for col in st.columns:
-        for inh in (False, True):
+        for inh in _inherited(st):
             cur.execute(
                 "select pg_catalog.pg_clear_attribute_stats(%s, %s, %s, %s)",
                 (st.schema, st.name, col, inh),

@@ -16,7 +16,6 @@ error, which is zero for a column stored in perfect order.
 
 from __future__ import annotations
 
-import copy
 import logging
 import math
 from collections.abc import Iterator
@@ -118,6 +117,7 @@ def check(
     except ValueError:
         default_target = 100
     found: list[Fragile] = []
+    shadow.load(conn, snap)
     for q in queries:
         base = baseline.get(q.name)
         if base is None or base.plan is None or base.shape is None:
@@ -130,7 +130,6 @@ def check(
         hit = _first_flip(shadow, conn, q, snap, base, cols, default_target)
         if hit is not None:
             found.append(hit)
-    shadow.load(conn, snap)  # leave the shadow as we found it
     return found
 
 
@@ -152,17 +151,17 @@ def _first_flip(
             continue
         n = sample_size(t, default_target)
         for what, nudged in nudges(t, col, n):
-            alt = copy.deepcopy(snap)
-            at = alt.table(qual)
-            assert at is not None
-            at.columns = [nudged if c.key == col.key else c for c in at.columns]
-            shadow.load(conn, alt)
+            # only this one column changes. a shallow copy is enough for
+            # rendering params, and the shadow gets a single-column restore
+            alt_t = replace(t, columns=[nudged if c.key == col.key else c for c in t.columns])
+            alt = replace(snap, tables=[alt_t if x is t else x for x in snap.tables])
+            shadow.load_column(conn, qual, nudged, snap.server_version_num)
             pt = explain_point(conn, q, alt, 0)
+            shadow.load_column(conn, qual, col, snap.server_version_num)
             if pt.shape is None or pt.shape == base.shape:
                 continue
             assert pt.plan is not None and base.plan is not None
             # what the flipped plan costs with the real stats
-            shadow.load(conn, snap)
             real = force(conn, q, snap, pt.plan, base.plan)
             return Fragile(
                 query=q,
