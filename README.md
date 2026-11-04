@@ -51,7 +51,8 @@ make demo
 
 `make demo` starts PostgreSQL 18 with the flipcast module on localhost:5433,
 grows a demo database through 14 simulated months (one snapshot per month),
-then runs a backtest and a forecast. It takes about 40 seconds.
+then runs a backtest and a forecast. Once the image is built that takes
+about half a minute.
 
 The same steps by hand:
 
@@ -82,8 +83,9 @@ flipcast -c flipcast-demo/flipcast.toml forecast
    pg_stat_statements are picked up on their own.
 3. Run `flipcast check`. It tests both connections, pg_dump, the module, and
    a full schema and stats load.
-4. Run `flipcast collect` once a day from cron. A snapshot is a few hundred
-   KB gzipped for a schema with a hundred tables.
+4. Run `flipcast collect` once a day from cron. Snapshots take about 0.7 KB
+   per column gzipped (the demo's 10 columns come to 7 KB), so around 1 MB a
+   day for 100 tables of 15 columns.
 5. After a few weeks of snapshots, run `flipcast backtest` to see how well
    the forecast would have done on your own history, then `flipcast forecast`.
 
@@ -97,9 +99,13 @@ it writes statistics with `pg_restore_relation_stats()` and
 older major version, the forecast shows what the 18 planner would do, and the
 backtest prints how often that matched what the source actually chose.
 
-The collector only reads. It needs `pg_read_all_stats` (or ownership of the
-tables, for pg_stats), and it runs plan-only `EXPLAIN` on the tracked queries
-with a 2 second lock timeout.
+The collector only reads. pg_stats hides columns the role can't `SELECT`, so
+give it `pg_read_all_data` (or SELECT on the tables), plus `pg_read_all_stats`
+to see other roles' statements in pg_stat_statements. It runs plan-only
+`EXPLAIN` on the tracked queries with a 2 second lock timeout.
+
+The design notes in [docs/design.md](docs/design.md) cover the decisions
+behind the shadow, the models and the backtest in more detail.
 
 ## How it works
 
@@ -172,7 +178,7 @@ explain select * from ev where user_id = 42;
  Seq Scan on ev  (cost=0.00..0.00 rows=1 width=52)
 ```
 
-`ext/flipcast_sizes` is about 120 lines of C that hook `get_relation_info`
+`ext/flipcast_sizes` is under 170 lines of C that hook `get_relation_info`
 and replace the size estimates with the catalog values, for tables and their
 indexes. It also guesses btree heights, because the real height lives in the
 index metapage, which is empty here. The shadow sessions `LOAD` it. With it,

@@ -69,10 +69,12 @@ catalog_size(Oid relid, CatalogSize *out)
  *
  * tuples per leaf page overstates the fanout of inner pages: leaves get
  * deduplicated, inner pages don't, create index fills inner pages to 70%, and
- * with repeated keys each pivot keeps a heap tid as a tiebreaker. measured on
- * int4, int8 and timestamptz indexes, inner pages held 150-285 downlinks, so
- * the leaf density is capped at 200. one level off only moves the descent
- * cost by 50 * cpu_operator_cost per index probe.
+ * with repeated keys each pivot keeps a heap tid as a tiebreaker. a 300k-row
+ * int4 index held about 155 downlinks per inner page; with 8-byte keys the
+ * most a 70%-full inner page can hold is about 285. a cap of 200 got the
+ * height right on every int4, int8 and timestamptz index tried (300k to 1m
+ * rows). one level off only moves the descent cost by 50 * cpu_operator_cost
+ * per index probe.
  */
 #define MAX_INNER_FANOUT 200.0
 
