@@ -1,4 +1,4 @@
-"""A mostly-NULL column, the shape of Clerk's February 2026 plan flip."""
+"""a mostly-null column, the shape of clerk's february 2026 plan flip."""
 
 import psycopg
 import pytest

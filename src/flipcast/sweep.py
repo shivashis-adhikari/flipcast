@@ -1,9 +1,9 @@
-"""Run every tracked query against every step and find where plans change.
+"""run every tracked query against every step and find where plans change.
 
-A sweep takes a list of statistics (one per step), loads each into the
-shadow, and EXPLAINs each query. Planning against an empty database is
+a sweep takes a list of statistics (one per step), loads each into the
+shadow, and explains each query. planning against an empty database is
 cheap, a few milliseconds per query, so a 12-month forecast in three growth
-scenarios is a few hundred EXPLAINs.
+scenarios is a few hundred explains.
 """
 
 from __future__ import annotations
@@ -107,10 +107,10 @@ def force(
     target: dict[str, Any],
     other: dict[str, Any],
 ) -> float | None:
-    """Cost of `target`'s shape at these stats, by switching off what `other`
-    uses. None if the planner can't be pushed back to that exact shape.
+    """cost of `target`'s shape at these stats, by switching off what `other`
+    uses. none if the planner can't be pushed back to that exact shape.
 
-    since PG 18 disabled nodes don't get a 1e10 cost penalty anymore (they are
+    since pg 18 disabled nodes don't get a 1e10 cost penalty anymore (they are
     counted separately), so the reported cost is the plan's real cost.
     """
     want = plans.shape(target)

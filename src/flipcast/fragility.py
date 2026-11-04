@@ -1,16 +1,16 @@
-"""Plans that can flip today, from nothing but ANALYZE sampling noise.
+"""plans that can flip today, from nothing but analyze sampling noise.
 
-ANALYZE reads a sample of 300 x statistics_target rows, so every fraction it
-stores has sampling error. A plan sitting near a crossover can flip on the
-next ANALYZE with no growth at all. Clerk's February 2026 outage was that
-kind: after an automatic ANALYZE the planner assumed a column held almost no
+analyze reads a sample of 300 x statistics_target rows, so every fraction it
+stores has sampling error. a plan sitting near a crossover can flip on the
+next analyze with no growth at all. clerk's february 2026 outage was that
+kind: after an automatic analyze the planner assumed a column held almost no
 non-null values, and the query returned over 17,000.
 
-For each query, this nudges the stats of the columns its plan filters on by
+for each query, this nudges the stats of the columns its plan filters on by
 about two standard errors of a sample of that size, one change at a time,
-and re-plans. Any change of shape is reported. n_distinct gets a wider
-range (half and double), because ANALYZE's estimator for it is known to be
-far less stable than its fractions. Correlation moves by its own sampling
+and re-plans. any change of shape is reported. n_distinct gets a wider
+range (half and double), because analyze's estimator for it is known to be
+far less stable than its fractions. correlation moves by its own sampling
 error, which is zero for a column stored in perfect order.
 """
 
@@ -68,7 +68,7 @@ def nudges(t: TableStats, c: ColumnStats, n: int) -> Iterator[tuple[str, ColumnS
         if abs(q - p) > 1e-6:
             yield f"null_frac {p:.3f} -> {q:.3f}", replace(c, null_frac=q)
     if p > 0.9 and p < 1 - 1 / n:
-        # the Clerk case: the sample saw almost no non-null values at all
+        # the clerk case: the sample saw almost no non-null values at all
         q = 1 - 1 / n
         yield f"null_frac {p:.3f} -> {q:.4f}", replace(c, null_frac=q)
 

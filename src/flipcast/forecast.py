@@ -1,4 +1,4 @@
-"""Fit, project, sweep, explain the switches. The `flipcast forecast` command."""
+"""fit, project, sweep, explain the switches. the `flipcast forecast` command."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class Prediction:
     query: Query
     switch: Switch
     month: float
-    # step of the same switch under faster and slower growth. None: not
+    # step of the same switch under faster and slower growth. none: not
     # within the horizon
     fast_step: int | None
     slow_step: int | None
@@ -187,7 +187,7 @@ def _costs(
     old, new = sw.before.plan, sw.after.plan
     if old is None or new is None:
         return
-    # what if the planner flipped today, e.g. after an unlucky ANALYZE sample
+    # what if the planner flipped today, e.g. after an unlucky analyze sample
     shadow.load(conn, steps[0])
     first = steps[0]
     forced_new_now = force(conn, p.query, first, new, old)
@@ -214,7 +214,7 @@ def _verify(
     steps: list[Snapshot],
     step_days: float,
 ) -> None:
-    """Re-run the sweep for this one query with the fix in place."""
+    """re-run the sweep for this one query with the fix in place."""
     bad = p.switch.after.shape
     idx_name = f"flipcast_fix_{abs(hash((p.query.name, f.sql))) % 10**8}"
     pts: list[Point] = []

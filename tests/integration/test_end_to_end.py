@@ -1,4 +1,4 @@
-"""Demo history -> backtest -> forecast, through the CLI."""
+"""demo history -> backtest -> forecast, through the cli."""
 
 import json
 

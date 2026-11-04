@@ -1,15 +1,15 @@
-"""The shadow database: an empty copy of the schema with made-up statistics.
+"""the shadow database: an empty copy of the schema with made-up statistics.
 
-Building one:
-  1. CREATE DATABASE on a scratch PostgreSQL 18 server
+building one:
+  1. create database on a scratch PostgreSQL 18 server
   2. replay pg_dump --schema-only from the snapshot
   3. turn autovacuum off on every table, so nothing ever re-analyzes the
      (empty) tables and wipes out the injected stats
   4. per step: pg_restore_relation_stats() for every table and index,
      pg_restore_attribute_stats() for every column
 
-The planner still won't believe relpages for a table with no blocks on disk,
-which is what the flipcast_sizes module is for. Each session LOADs it.
+the planner still won't believe relpages for a table with no blocks on disk,
+which is what the flipcast_sizes module is for. each session loads it.
 """
 
 from __future__ import annotations
@@ -125,7 +125,7 @@ class Shadow:
         return conn
 
     def load(self, conn: psycopg.Connection[Any], snap: Snapshot) -> None:
-        """Make the shadow's catalog stats match snap, exactly."""
+        """make the shadow's catalog stats match snap, exactly."""
         notes = db.notices(conn)
         notes.take()
         by_name = {t.qualname: t for t in snap.tables}

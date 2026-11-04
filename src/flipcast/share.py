@@ -1,17 +1,17 @@
-"""How the share of one value (one MCV entry) changes as a table grows.
+"""how the share of one value (one mcv entry) changes as a table grows.
 
-Modeling the share directly in time goes wrong for append-mostly tables. If
+modeling the share directly in time goes wrong for append-mostly tables. if
 new rows are 18% 'export' and old ones were 3%, the overall share climbs,
-but it can never pass 18% however long you wait. A logistic in time doesn't
+but it can never pass 18% however long you wait. a logistic in time doesn't
 know that and runs off toward 1.
 
-So the models here work on counts instead. c = share * rows is the number of
+so the models here work on counts instead. c = share * rows is the number of
 rows holding the value, and m = dc/drows is its share among *new* rows (the
-marginal share). Projection integrates m over the projected row growth:
+marginal share). projection integrates m over the projected row growth:
 
   constant       share stays where it is
   steady mix     m fixed at its recent value
-  shifting mix   m keeps trending, damped so the trend fades out (Holt-style
+  shifting mix   m keeps trending, damped so the trend fades out (holt-style
                  damped trend, in logit space so m stays inside (0, 1))
   logistic       share trends in time; only for tables that aren't growing,
                  where there are no new rows to take a share of

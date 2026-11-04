@@ -1,4 +1,4 @@
-"""Turn forecasts and backtests into text, markdown or JSON."""
+"""turn forecasts and backtests into text, markdown or json."""
 
 from __future__ import annotations
 
@@ -42,8 +42,8 @@ def _band(p: Prediction, fc: Forecast) -> str:
 
 
 def summary(p: Prediction) -> str:
-    """The one-line version: 'switches from an index scan to a sequential
-    scan on events around month 7, at roughly 40.2M rows'."""
+    """the one-line version: 'switches from an index scan to a sequential
+    scan on events around month 7, at roughly 40.2m rows'."""
     sw = p.switch
     rows = ""
     main = max(p.rows_then.items(), key=lambda kv: kv[1], default=None)

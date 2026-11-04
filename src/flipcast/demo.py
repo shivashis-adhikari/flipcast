@@ -1,12 +1,12 @@
-"""Grow a toy SaaS database month by month and snapshot it after each month.
+"""grow a toy SaaS database month by month and snapshot it after each month.
 
-This exists so there is real snapshot history to fit and backtest against.
-Each simulated month inserts that month's accounts and events (with
-created_at inside the month), runs ANALYZE, runs the workload a few times so
+this exists so there is real snapshot history to fit and backtest against.
+each simulated month inserts that month's accounts and events (with
+created_at inside the month), runs analyze, runs the workload a few times so
 pg_stat_statements has timings, and then calls the collector with the clock
 set to the end of the month.
 
-The data has the kinds of drift that move real plans:
+the data has the kinds of drift that move real plans:
   - events per month compound (x1.22 by default), accounts grow linearly
   - a few old accounts produce most of the traffic
   - 'export' events go from ~2% to ~20% of new traffic
@@ -195,7 +195,7 @@ def run(
 
     with db.connect(source_dsn, application_name="flipcast-demo") as conn:
         conn.execute(SCHEMA)
-        # same data every run. ANALYZE still samples at random, like it does
+        # same data every run. analyze still samples at random, like it does
         # in production, so stats and plans can differ a little between runs.
         conn.execute("select setseed(0.42)")
         has_pss = _try_pss(conn)
@@ -242,8 +242,8 @@ def _try_pss(conn: psycopg.Connection[Any]) -> bool:
 
 
 def _exercise(conn: psycopg.Connection[Any], queries: list[Query], at: datetime) -> None:
-    """Run the parameterized queries a few times so pg_stat_statements has
-    timings. Queries that call now() are skipped: run for real they'd use
+    """run the parameterized queries a few times so pg_stat_statements has
+    timings. queries that call now() are skipped: run for real they'd use
     today's date instead of the simulated one, and the timings would be
     for an empty range."""
     stub = Snapshot(taken_at=at, database="", server_version_num=0)

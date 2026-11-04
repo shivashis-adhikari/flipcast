@@ -1,8 +1,8 @@
-"""A small SQL lexer, just enough to split scripts and rewrite clock calls.
+"""a small sql lexer, just enough to split scripts and rewrite clock calls.
 
-It knows about the things that make naive string handling wrong: quoted
-strings (including E'' and doubled quotes), quoted identifiers, dollar quoting,
-and both comment styles. It does not try to understand the grammar.
+it knows about the things that make naive string handling wrong: quoted
+strings (including e'' and doubled quotes), quoted identifiers, dollar quoting,
+and both comment styles. it does not try to understand the grammar.
 """
 
 from __future__ import annotations
@@ -113,7 +113,7 @@ def _skip_string(sql: str, i: int, *, backslash: bool) -> int:
 
 
 def split_statements(sql: str) -> list[str]:
-    """Split a script on top-level semicolons. Empty statements are dropped."""
+    """split a script on top-level semicolons. empty statements are dropped."""
     out: list[str] = []
     begin = 0
     for t in tokens(sql):
@@ -151,7 +151,7 @@ _CLOCK_KEYWORDS = {
 
 
 def rewrite_clock(sql: str, tstz: str, ts: str, d: str) -> str:
-    """Replace now() and friends with literals.
+    """replace now() and friends with literals.
 
     tstz, ts and d are the replacement values already formatted for
     timestamptz, timestamp and date.
@@ -254,7 +254,7 @@ _LITERAL_TYPES = {
 
 
 def fix_typed_params(sql: str) -> str:
-    """Rewrite `type $n` to `$n::type`."""
+    """rewrite `type $n` to `$n::type`."""
     toks = list(tokens(sql))
     out: list[str] = []
     k = 0
@@ -287,7 +287,7 @@ def _prev_code(toks: list[Token], k: int) -> int | None:
 
 
 def fingerprint(sql: str) -> str:
-    """Query text with constants and parameters folded to ?, for matching a
+    """query text with constants and parameters folded to ?, for matching a
     config query against pg_stat_statements, which does the same folding."""
     parts = []
     for t in tokens(sql):

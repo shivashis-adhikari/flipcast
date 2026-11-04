@@ -19,7 +19,7 @@ class FlipcastError(RuntimeError):
 
 
 class NoticeLog:
-    """Collects server WARNINGs. The stats restore functions report bad input
+    """collects server warnings. the stats restore functions report bad input
     as a warning plus a false return, never as an error, so we have to look."""
 
     def __init__(self) -> None:
@@ -40,7 +40,6 @@ def connect(dsn: str, *, application_name: str = "flipcast") -> psycopg.Connecti
     conn = psycopg.connect(dsn, autocommit=True, application_name=application_name)
     notices = NoticeLog()
     conn.add_notice_handler(notices)
-    conn.info  # noqa: B018 - fail fast if the connection is unusable
     with conn.cursor() as cur:
         # array and timestamp text has to be parseable by values.py
         cur.execute("SET DateStyle = 'ISO, YMD'")

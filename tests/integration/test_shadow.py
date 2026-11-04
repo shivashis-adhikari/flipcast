@@ -1,4 +1,4 @@
-"""The shadow has to plan exactly like the real database, or nothing else matters."""
+"""the shadow has to plan exactly like the real database, or nothing else matters."""
 
 from datetime import timedelta
 

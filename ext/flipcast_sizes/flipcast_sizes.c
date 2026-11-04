@@ -12,7 +12,7 @@
  * the catalog values, for tables and their indexes. column statistics are not
  * touched; the planner already reads those straight from pg_statistic.
  *
- * load it per session with LOAD 'flipcast_sizes' (or session_preload_libraries)
+ * load it per session with load 'flipcast_sizes' (or session_preload_libraries)
  * on a scratch server only. never on a server that holds real data.
  */
 #include "postgres.h"
@@ -68,8 +68,8 @@ catalog_size(Oid relid, CatalogSize *out)
  * metapage, which is empty here. height is about log_fanout(leaf pages).
  *
  * tuples per leaf page overstates the fanout of inner pages: leaves get
- * deduplicated, inner pages don't, CREATE INDEX fills inner pages to 70%, and
- * with repeated keys each pivot keeps a heap TID as a tiebreaker. measured on
+ * deduplicated, inner pages don't, create index fills inner pages to 70%, and
+ * with repeated keys each pivot keeps a heap tid as a tiebreaker. measured on
  * int4, int8 and timestamptz indexes, inner pages held 150-285 downlinks, so
  * the leaf density is capped at 200. one level off only moves the descent
  * cost by 50 * cpu_operator_cost per index probe.

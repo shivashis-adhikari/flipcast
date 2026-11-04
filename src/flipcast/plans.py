@@ -1,9 +1,9 @@
-"""EXPLAIN a query and reduce the plan to its shape.
+"""explain a query and reduce the plan to its shape.
 
-Two plans have the same shape when they use the same node types, on the same
-relations and indexes, in the same tree. Costs, row counts and worker counts
+two plans have the same shape when they use the same node types, on the same
+relations and indexes, in the same tree. costs, row counts and worker counts
 are left out: those drift every step and are not what breaks a production
-database. A switch is a change of shape.
+database. a switch is a change of shape.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ class ExplainError(RuntimeError):
 
 
 def explain(conn: psycopg.Connection[Any], r: Rendered) -> dict[str, Any]:
-    """Plan-only EXPLAIN. Returns the top "Plan" node."""
+    """plan-only explain. returns the top "Plan" node."""
     try:
         with conn.transaction(), conn.cursor() as cur:
             # a schema copy has no data, but a source database does: keep the
@@ -130,7 +130,7 @@ _JOINS = {"Nested Loop": "nested loop", "Hash Join": "hash join", "Merge Join": 
 
 
 def accesses(plan: dict[str, Any]) -> dict[str, list[str]]:
-    """How each relation (by alias) is read, in plan order."""
+    """how each relation (by alias) is read, in plan order."""
     out: dict[str, list[str]] = {}
     for n in walk(plan):
         nt = n["Node Type"]
@@ -175,7 +175,7 @@ def node_types(plan: dict[str, Any]) -> Counter[str]:
 
 
 def describe_change(old: dict[str, Any], new: dict[str, Any]) -> list[str]:
-    """Plain-English lines saying what changed between two plans."""
+    """plain-english lines saying what changed between two plans."""
     lines: list[str] = []
     a_old, a_new = accesses(old), accesses(new)
     for rel in sorted(set(a_old) | set(a_new)):
@@ -211,7 +211,7 @@ def _counts(c: Counter[str]) -> str:
 
 
 def headline(old: dict[str, Any], new: dict[str, Any]) -> str:
-    """One phrase for the report, e.g. 'index scan to seq scan on events'."""
+    """one phrase for the report, e.g. 'index scan to seq scan on events'."""
     a_old, a_new = accesses(old), accesses(new)
     for rel in sorted(set(a_old) & set(a_new)):
         b, f = a_old[rel], a_new[rel]
@@ -261,7 +261,7 @@ def toggles_against(target: dict[str, Any], other: dict[str, Any]) -> list[str]:
 
 
 def toggles_except(target: dict[str, Any]) -> list[str]:
-    """Every enable_* setting for a node type `target` doesn't use. Heavier
+    """every enable_* setting for a node type `target` doesn't use. heavier
     than toggles_against: with hash join off, the planner may reach for a
     merge join instead of the nested loop we are after."""
     t = node_types(target)

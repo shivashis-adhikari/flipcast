@@ -1,6 +1,6 @@
-"""Suggest fixes for a predicted switch.
+"""suggest fixes for a predicted switch.
 
-These are rules of thumb read off the two plans, not an optimizer. Index and
+these are rules of thumb read off the two plans, not an optimizer. index and
 setting suggestions get checked afterwards: the forecast re-runs the sweep
 with the fix applied in the shadow and says whether the switch still happens.
 """
@@ -41,12 +41,12 @@ class Scan:
     outputs: list[str]
     under_limit: bool
     sorted_above: bool
-    # every column any condition mentions, including IS NULL tests
+    # every column any condition mentions, including is null tests
     cond_cols: list[str] = field(default_factory=list)
 
 
 def _cols_in(text: str | None, columns: set[str]) -> tuple[list[str], list[str]]:
-    """Columns used with = and with a range operator, in order of appearance."""
+    """columns used with = and with a range operator, in order of appearance."""
     if not text:
         return [], []
     eq: list[str] = []
@@ -174,7 +174,7 @@ def suggest(sw: Switch, at_switch: Snapshot, settings: dict[str, str]) -> list[F
         before = old_scans.get((s.schema, s.table))
         nt = s.node["Node Type"]
 
-        # the LIMIT trap: walking an index in ORDER BY order and filtering
+        # the limit trap: walking an index in order by order and filtering
         if (
             nt in ("Index Scan", "Index Only Scan")
             and s.under_limit
@@ -232,7 +232,7 @@ def suggest(sw: Switch, at_switch: Snapshot, settings: dict[str, str]) -> list[F
                     )
                 )
 
-        # columns whose MCV list is full: values that fall off it get an average guess
+        # columns whose mcv list is full: values that fall off it get an average guess
         if ts is not None:
             target = int(settings.get("default_statistics_target", "100") or 100)
             for c in s.eq_cols:
@@ -321,7 +321,7 @@ def suggest(sw: Switch, at_switch: Snapshot, settings: dict[str, str]) -> list[F
 def index_size(
     ts: TableStats, cols: list[str], include: list[str], rows: float
 ) -> tuple[int, float]:
-    """Rough btree size for a hypothetical index: (pages, tuples).
+    """rough btree size for a hypothetical index: (pages, tuples).
 
     leaf tuple = 8 byte header + aligned key widths, plus a 4 byte line pointer,
     pages filled to 90%. deduplication is ignored, so this overestimates on

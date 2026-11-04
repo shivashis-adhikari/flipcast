@@ -1,21 +1,21 @@
-"""Per-table and per-column models of how planner statistics change over time.
+"""per-table and per-column models of how planner statistics change over time.
 
-Fitted from a series of snapshots, then asked for the statistics at any
-future time. What gets modeled:
+fitted from a series of snapshots, then asked for the statistics at any
+future time. what gets modeled:
 
   rows          constant, linear or exponential in time
   pages         linear in rows (bytes per row stays put unless it trends)
   null_frac     constant or linear, clamped to [0, 1]
-  n_distinct    constant, or a power law in rows (D = c * R^k)
-  MCV list      each value's share follows a logistic trend, then the list is
-                rebuilt with the same cutoff rule ANALYZE uses
+  n_distinct    constant, or a power law in rows (d = c * r^k)
+  mcv list      each value's share follows a logistic trend, then the list is
+                rebuilt with the same cutoff rule analyze uses
   histogram     "append" for columns whose top bound keeps moving (ids,
                 created_at): old buckets are kept and new rows are spread
                 over the extended range. otherwise per-quantile drift or
                 static, whichever forecasts better
   correlation   constant or linear, clamped to [-1, 1]
 
-Everything else (array element stats, range stats, avg_width) is carried
+everything else (array element stats, range stats, avg_width) is carried
 forward from the latest snapshot.
 """
 
@@ -36,10 +36,10 @@ from .values import Codec, codec_for, decode_all
 
 DAY_S = 86400.0
 MONTH_DAYS = 30.0
-# ANALYZE keeps a value in the MCV list only if it is this much more common
-# than an average non-MCV value (see analyze_mcv_list in analyze.c)
+# analyze keeps a value in the mcv list only if it is this much more common
+# than an average non-mcv value (see analyze_mcv_list in analyze.c)
 MCV_CUTOFF = 1.25
-# ANALYZE stores n_distinct as a negative fraction once it passes this share
+# analyze stores n_distinct as a negative fraction once it passes this share
 NDISTINCT_RATIO_SWITCH = 0.10
 
 
@@ -86,7 +86,7 @@ def fmt_count(x: float) -> str:
 
 
 def _recent(fitter: fit.Fitter) -> fit.Fitter:
-    """The same curve, fit on the newer half of the points only.
+    """the same curve, fit on the newer half of the points only.
 
     growth rarely follows one curve for a year. a table growing 20% a month
     on top of a small base looks exponential early and linear-ish late, and
@@ -180,7 +180,7 @@ def _relative_slope_se(s: Series, kind: str) -> float:
 
 
 class RatioModel:
-    """y as a function of rows, e.g. relpages. Linear when there is enough
+    """y as a function of rows, e.g. relpages. linear when there is enough
     spread to fit one, otherwise the latest ratio."""
 
     def __init__(self, rows: Sequence[float], ys: Sequence[float]):
@@ -245,7 +245,7 @@ class ColumnModel:
     def _fit_ndistinct(self, ts: list[float], rws: list[float], cs: list[ColumnStats]) -> None:
         self.nd_negative = self.latest.n_distinct < 0
         if self.nd_negative:
-            # ANALYZE already decided this column scales with the table
+            # analyze already decided this column scales with the table
             self.nd_kind = "proportional"
             self.nd_ratio = -self.latest.n_distinct
             return
@@ -276,7 +276,7 @@ class ColumnModel:
         d = self.nd_pred(t, r) * (self.nd_last / base if base > 0 else 1.0)
         return max(1.0, d)
 
-    # MCV list
+    # mcv list
 
     def _fit_mcv(self, ts: list[float], rws: list[float], cs: list[ColumnStats]) -> None:
         self.mcv_values: list[str | None] = []
@@ -285,7 +285,7 @@ class ColumnModel:
         if not self.latest.mcv or not self.latest.mcv_freqs:
             return
         self.mcv_values = pgarray.parse(self.latest.mcv)
-        # a categorical column: the MCV list is the whole distribution
+        # a categorical column: the mcv list is the whole distribution
         mass = sum(self.latest.mcv_freqs)
         self.mcv_closed = (
             self.latest.histogram is None and mass >= (1 - self.latest.null_frac) - 0.01
@@ -436,7 +436,7 @@ class ColumnModel:
     def _new_segment_shape(
         self, clock: Clock, hi_now: float, hi_then: float
     ) -> list[tuple[float, float]]:
-        """CDF of the newly added rows over (hi_now, hi_then].
+        """cdf of the newly added rows over (hi_now, hi_then].
 
         a value v was the top of the range at time tau(v). the share of new
         rows at or below v is the share of the growth that happened by tau(v),
@@ -747,7 +747,7 @@ class TableModel:
 
 
 class GrowthModel:
-    """rows_only=True is the naive baseline for backtests: grow row and page
+    """rows_only=true is the naive baseline for backtests: grow row and page
     counts, leave every column statistic as it was."""
 
     def __init__(self, snaps: list[Snapshot], *, rows_only: bool = False):
@@ -770,9 +770,9 @@ class GrowthModel:
             self.tables[tab.qualname] = TableModel(history, default_target, rows_only=rows_only)
 
     def band(self) -> float:
-        """Relative uncertainty in the growth rate, for the slow/fast scenarios.
+        """relative uncertainty in the growth rate, for the slow/fast scenarios.
 
-        Taken from the slope's standard error on the biggest tables, clamped
+        taken from the slope's standard error on the biggest tables, clamped
         so two snapshots don't produce a band of +-500%.
         """
         weighted, weight = 0.0, 0.0

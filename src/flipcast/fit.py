@@ -1,8 +1,8 @@
-"""Least squares on short series, and picking between candidate curves.
+"""least squares on short series, and picking between candidate curves.
 
-The series are tiny (one point per snapshot), so everything here is plain
-Python. Candidates are compared by rolling-origin forecast error: fit on the
-first k points, predict point k+1, repeat. In-sample fit would always favor
+the series are tiny (one point per snapshot), so everything here is plain
+python. candidates are compared by rolling-origin forecast error: fit on the
+first k points, predict point k+1, repeat. in-sample fit would always favor
 the more flexible curve, which is exactly wrong for extrapolation.
 """
 
@@ -79,7 +79,7 @@ def exponential(xs: Sequence[float], ys: Sequence[float]) -> Curve:
 
 
 def accelerating(xs: Sequence[float], ys: Sequence[float]) -> Curve:
-    """The insert rate grows exponentially and the table is its running sum.
+    """the insert rate grows exponentially and the table is its running sum.
 
     dy/dx = exp(a + b x), so y = y_last + (exp(a + b x) - exp(a + b x_last)) / b.
     b = 0 is plain linear growth. this is what a table looks like when the
@@ -127,7 +127,7 @@ def rolling_error(
     min_train: int | None = None,
     scale: float | None = None,
 ) -> float:
-    """Weighted mean relative one-step-ahead error."""
+    """weighted mean relative one-step-ahead error."""
     n = len(xs)
     if min_train is None:
         min_train = 2 if n < 6 else 3
@@ -150,7 +150,7 @@ def choose(
     scale: float | None = None,
     slack: float = 0.1,
 ) -> tuple[str, Curve]:
-    """Pick the candidate with the lowest rolling error.
+    """pick the candidate with the lowest rolling error.
 
     candidates go simplest first, and the first one must be the no-trend
     model. a more complex one has to beat every simpler one by `slack`
@@ -184,7 +184,7 @@ def has_trend(xs: Sequence[float], ys: Sequence[float], t: float = 2.0) -> bool:
 
 
 def interp(x: float, xs: Sequence[float], ys: Sequence[float]) -> float:
-    """Piecewise linear interpolation, xs ascending. Clamps at the ends."""
+    """piecewise linear interpolation, xs ascending. clamps at the ends."""
     if x <= xs[0]:
         return ys[0]
     if x >= xs[-1]:

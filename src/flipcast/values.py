@@ -1,9 +1,9 @@
-"""Map column values to floats and back, for the types where that makes sense.
+"""map column values to floats and back, for the types where that makes sense.
 
-Growth models do arithmetic on histogram bounds (a timestamp range extends,
-an id range grows). That needs a number line, so each supported type gets a
-codec: text as Postgres prints it -> float, and float -> text Postgres will
-accept. Types without a codec are carried forward unchanged.
+growth models do arithmetic on histogram bounds (a timestamp range extends,
+an id range grows). that needs a number line, so each supported type gets a
+codec: text as postgres prints it -> float, and float -> text postgres will
+accept. types without a codec are carried forward unchanged.
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ class _TimestamptzCodec(Codec):
     per_day = 86400.0
 
     def to_float(self, text: str) -> float:
-        # the collector pins TimeZone to UTC, so this is "...+00"
+        # the collector pins TimeZone to utc, so this is "...+00"
         dt = datetime.fromisoformat(text)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=UTC)
@@ -137,7 +137,7 @@ def codec_for(type_oid: int) -> Codec | None:
 
 
 def decode_all(codec: Codec, elems: list[str | None]) -> list[float] | None:
-    """Floats for every element, or None if any element won't convert.
+    """floats for every element, or none if any element won't convert.
 
     'infinity' in a timestamp histogram is the usual reason.
     """

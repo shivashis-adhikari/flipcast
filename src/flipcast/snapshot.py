@@ -1,7 +1,7 @@
-"""What one snapshot of a database's planner inputs looks like.
+"""what one snapshot of a database's planner inputs looks like.
 
-The same classes describe a real snapshot taken by the collector and a
-projected one made up by the growth models. That symmetry is on purpose: the
+the same classes describe a real snapshot taken by the collector and a
+projected one made up by the growth models. that symmetry is on purpose: the
 shadow loader and plan sweeper don't care where the numbers came from, which
 is what makes backtesting honest.
 """
@@ -26,7 +26,7 @@ class ColumnStats:
     type_name: str
     type_oid: int  # base type, domains resolved
     inherited: bool = False
-    stattarget: int | None = None  # None: default_statistics_target
+    stattarget: int | None = None  # none: default_statistics_target
     null_frac: float = 0.0
     avg_width: int = 0
     n_distinct: float = 0.0
@@ -57,7 +57,7 @@ class IndexStats:
     am: str = "btree"
     unique: bool = False
     partial: bool = False
-    columns: list[str] = field(default_factory=list)  # key columns, expressions as None
+    columns: list[str] = field(default_factory=list)  # key columns, expressions as none
     # stats on index expressions live in pg_statistic under the index
     expr_stats: list[ColumnStats] = field(default_factory=list)
 
@@ -185,7 +185,7 @@ def _table_from(d: dict[str, Any]) -> TableStats:
 
 
 class Store:
-    """A directory of gzipped JSON snapshots, one file each, sorted by name."""
+    """a directory of gzipped json snapshots, one file each, sorted by name."""
 
     def __init__(self, path: str | os.PathLike[str]):
         self.path = Path(path)

@@ -1,18 +1,18 @@
-"""Queries to track, and how to fill in their parameters at a given step.
+"""queries to track, and how to fill in their parameters at a given step.
 
-A plan depends on the parameter values as much as on the stats. A query like
+a plan depends on the parameter values as much as on the stats. a query like
 "events from the last 7 days" means something different in month 9 than it
 does today, so parameters are written relative to the step being planned:
 
     params = ["now - 7 days", "mcv:events.account_id", 50]
 
-    now [+|-] N unit        the clock at that step (unit: second..year)
+    now [+|-] n unit        the clock at that step (unit: second..year)
     mcv:table.col[:rank]    rank-th most common value at that step (default 1)
     quantile:table.col:q    value at quantile q of the histogram at that step
     min: / max: / median:   shorthands for quantile 0, 1, 0.5
 
-Anything else is a literal. A TOML table {literal = "now"} forces a literal.
-Calls to now(), current_timestamp and friends inside the SQL text get the
+anything else is a literal. a toml table {literal = "now"} forces a literal.
+calls to now(), current_timestamp and friends inside the sql text get the
 same treatment.
 """
 
@@ -111,7 +111,7 @@ def parse_param(raw: Any) -> Param:
 class Query:
     name: str
     sql: str
-    params: list[Param] | None = None  # None: generic plan when the sql has $n
+    params: list[Param] | None = None  # none: generic plan when the sql has $n
     source: str = "config"
     queryid: str | None = None
     calls: int | None = None
@@ -127,7 +127,7 @@ class Query:
 @dataclass(frozen=True)
 class Rendered:
     sql: str
-    values: list[Any] | None  # None means plan it generic
+    values: list[Any] | None  # none means plan it generic
 
 
 def render(q: Query, at: datetime, stats: Snapshot) -> Rendered:
@@ -186,7 +186,7 @@ def resolve(p: Param, at: datetime, stats: Snapshot) -> Any:
 
 
 def to_python_literal(v: Any) -> Any:
-    # TOML gives us dates and datetimes as real objects already; keep them
+    # toml gives us dates and datetimes as real objects already; keep them
     if isinstance(v, (datetime, date, int, float, bool)) or v is None:
         return v
     return str(v)

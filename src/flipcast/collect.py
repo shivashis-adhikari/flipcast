@@ -1,6 +1,6 @@
-"""Take a snapshot of everything the planner reads, plus the queries that matter.
+"""take a snapshot of everything the planner reads, plus the queries that matter.
 
-Run this on a schedule (daily is plenty). Every snapshot holds:
+run this on a schedule (daily is plenty). every snapshot holds:
   - pg_class sizes for each table and index
   - pg_stats for each column, arrays kept as text
   - the planner settings in effect
@@ -312,10 +312,10 @@ def dump_schema_sql(pg_dump: list[str], dsn: str) -> str:
 
 
 def tracked(configured: list[Query], snap: Snapshot) -> list[Query]:
-    """Config queries first, then pg_stat_statements entries not already covered.
+    """config queries first, then pg_stat_statements entries not already covered.
 
-    A statement whose text matches a config query is merged into it (its
-    timings attach to the config entry). If the config entry plans with its
+    a statement whose text matches a config query is merged into it (its
+    timings attach to the config entry). if the config entry plans with its
     own parameter values, the statement is also kept as "<name> (generic)",
     because that is the plan a prepared statement ends up running.
     """

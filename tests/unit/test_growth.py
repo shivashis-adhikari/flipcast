@@ -108,7 +108,7 @@ def test_mcv_share_moves_toward_new_rows_share():
     assert now["export"] < freqs["export"] <= 0.26
     # closed set: all three values still sum to everything
     assert sum(freqs.values()) == pytest.approx(1.0, abs=1e-6)
-    # the list stays sorted by frequency, like ANALYZE writes it
+    # the list stays sorted by frequency, like analyze writes it
     assert p.column("kind").mcv_freqs == sorted(p.column("kind").mcv_freqs, reverse=True)
 
 

@@ -12,7 +12,7 @@ def test_parse_plain_and_quoted():
     assert pgarray.parse('{"say \\"hi\\"","back\\\\slash"}') == ['say "hi"', "back\\slash"]
     assert pgarray.parse("{}") == []
     assert pgarray.parse("{NULL,x}") == [None, "x"]
-    assert pgarray.parse('{"NULL"}') == ["NULL"]  # quoted NULL is a string
+    assert pgarray.parse('{"NULL"}') == ["NULL"]  # quoted null is a string
 
 
 def test_parse_timestamps_as_pg_prints_them():

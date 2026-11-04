@@ -1,17 +1,17 @@
-"""Would the forecast have worked? Replay history and check.
+"""would the forecast have worked? replay history and check.
 
-For each origin k (with at least min_train snapshots up to and including k):
+for each origin k (with at least min_train snapshots up to and including k):
 fit the growth models on snapshots[0..k], project to the exact times of the
-later snapshots, and plan every query against those projections. Ground
-truth is the plan each query gets with the stats ANALYZE actually produced
+later snapshots, and plan every query against those projections. ground
+truth is the plan each query gets with the stats analyze actually produced
 at those later times, replayed through the same shadow.
 
-Replaying the truth through the shadow (instead of only trusting the plans
+replaying the truth through the shadow (instead of only trusting the plans
 the collector observed on the source) means the comparison isolates the
-statistics forecast. The observed plans are still used: replayed vs
+statistics forecast. the observed plans are still used: replayed vs
 observed agreement measures how faithful the shadow itself is.
 
-Scores:
+scores:
   shape agreement   share of (origin, later snapshot, query) where the
                     predicted shape is the true shape
   switch detection  per (origin, query): did the first switch after the
@@ -19,7 +19,7 @@ Scores:
   timing error      for detected switches, predicted minus actual date
   row error         |predicted - actual| / actual for table row counts
 
-The same thing runs for a rows-only baseline (scale row counts, freeze the
+the same thing runs for a rows-only baseline (scale row counts, freeze the
 column stats), which is what you'd get from "just multiply by growth".
 """
 

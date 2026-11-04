@@ -1,7 +1,7 @@
-"""Parse and print one-dimensional Postgres array literals.
+"""parse and print one-dimensional postgres array literals.
 
 pg_stats hands back anyarray columns, which only survive the trip to the
-client as text. Everything flipcast does with MCV lists and histograms starts
+client as text. everything flipcast does with mcv lists and histograms starts
 by splitting that text into elements, and ends by printing a literal that
 pg_restore_attribute_stats() can feed to the column type's input function.
 """

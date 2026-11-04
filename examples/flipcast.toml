@@ -1,0 +1,62 @@
+# flipcast.toml for a real database. every key is optional except the two dsns.
+# FLIPCAST_SOURCE_DSN and FLIPCAST_SHADOW_DSN override the dsns here, so the
+# passwords can stay out of this file.
+
+[source]
+# the database to forecast. collect only reads from it: catalogs, pg_stats,
+# pg_stat_statements, and plan-only EXPLAIN of the tracked queries.
+dsn = "postgresql://flipcast@db.internal/app"
+# limit stats collection to these schemas (default: all non-system schemas)
+schemas = ["public"]
+# how many statements to pick up from pg_stat_statements, by total time
+top_queries = 20
+# ignore statements that ran fewer times than this
+min_calls = 5
+# a PostgreSQL 18 pg_dump. a docker one works too:
+#   pg_dump = "docker run --rm --network host postgres:18 pg_dump"
+pg_dump = "pg_dump"
+
+[shadow]
+# a scratch PostgreSQL 18 server with flipcast_sizes installed (see
+# docker/Dockerfile). flipcast creates and drops databases on it, so give it
+# a role that can do that, and never point it at a server with real data.
+dsn = "postgresql://postgres@localhost:5433/postgres"
+database = "flipcast_shadow"
+
+[store]
+# snapshots go here, one gzipped JSON file each. relative to this file.
+path = ".flipcast/snapshots"
+
+[forecast]
+months = 12
+step_days = 30
+# also run with growth a bit faster and slower, for the month ranges
+scenarios = true
+
+# queries to track with real parameter values. without params, a query with
+# $1-style placeholders is planned as a generic plan (what a prepared
+# statement ends up with). params are re-evaluated at every step:
+#   "now - 7 days"            the projected date minus 7 days
+#   "mcv:orders.status:2"     the second most common status at that step
+#   "quantile:orders.total:0.99"
+#   "max:orders.id"           the newest id at that step
+#   {literal = "now"}         the string "now", not the clock
+
+[[query]]
+name = "customer_orders"
+sql = """
+select id, total, created_at from orders
+where customer_id = $1 and status = $2
+order by created_at desc limit 50
+"""
+params = ["mcv:orders.customer_id:10", "shipped"]
+
+[[query]]
+name = "last_week_revenue"
+sql = "select sum(total) from orders where created_at > now() - interval '7 days'"
+
+# a statement from pg_stat_statements, by queryid, planned with these values
+[[query]]
+name = "invoice_lookup"
+queryid = "-1234567890123456789"
+params = [42]

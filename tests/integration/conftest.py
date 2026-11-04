@@ -34,7 +34,7 @@ def pg_dump():
 
 @pytest.fixture
 def scratch_db(admin_dsn):
-    """A throwaway database, dropped afterwards."""
+    """a throwaway database, dropped afterwards."""
     name = f"flipcast_t_{uuid.uuid4().hex[:8]}"
     with psycopg.connect(admin_dsn, autocommit=True) as c:
         c.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))

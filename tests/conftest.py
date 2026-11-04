@@ -30,7 +30,7 @@ def ts_hist(lo: datetime, hi: datetime, buckets: int = 100) -> str:
 def events_history(
     months: int = 8, *, growth: float = 1.2, base: float = 10000.0, export_new: float = 0.25
 ) -> list[Snapshot]:
-    """Snapshots of an append-only events table, built by hand.
+    """snapshots of an append-only events table, built by hand.
 
     inserts per month grow by `growth`. created_at covers the data so far.
     'export' is 2% of the first month and export_new of every month after.
