@@ -25,9 +25,12 @@ from .workload import ParamError, Query, render
 
 log = logging.getLogger(__name__)
 
+# pg_stat_statements.toplevel arrived in 14. the shadow still has to be 18.
+MIN_SOURCE_VERSION = 140000
+
 _TABLES = """
 select c.oid, n.nspname, c.relname, c.relkind, c.relpages, c.reltuples,
-       c.relallvisible, c.relallfrozen, s.n_live_tup, s.n_dead_tup
+       c.relallvisible, {allfrozen}, s.n_live_tup, s.n_dead_tup
 from pg_class c
 join pg_namespace n on n.oid = c.relnamespace
 left join pg_stat_all_tables s on s.relid = c.oid
@@ -46,8 +49,7 @@ select a.attrelid, a.attname, format_type(a.atttypid, a.atttypmod), a.atttypid,
        a.attstattarget, s.inherited, s.null_frac, s.avg_width, s.n_distinct,
        s.most_common_vals::text, s.most_common_freqs, s.histogram_bounds::text,
        s.correlation, s.most_common_elems::text, s.most_common_elem_freqs,
-       s.elem_count_histogram, s.range_length_histogram::text, s.range_empty_frac,
-       s.range_bounds_histogram::text
+       s.elem_count_histogram, {range_cols}
 from pg_attribute a
 join pg_class c on c.oid = a.attrelid
 join pg_namespace n on n.oid = c.relnamespace
@@ -99,14 +101,24 @@ def collect(cfg: Config, *, at: datetime | None = None, dump_schema: bool = True
         raise db.FlipcastError("no source dsn (set [source] dsn or FLIPCAST_SOURCE_DSN)")
     conn = db.connect(cfg.source_dsn, application_name="flipcast-collect")
     try:
-        version = db.require_pg18(conn, "the source database")
+        version = conn.info.server_version
+        if version < MIN_SOURCE_VERSION:
+            raise db.FlipcastError(
+                f"the source runs PostgreSQL {version // 10000}; collecting needs 14 or later"
+            )
+        if version < db.MIN_SERVER_VERSION:
+            log.warning(
+                "the source runs PostgreSQL %d. the shadow plans with the 18 planner, which"
+                " can pick differently; the backtest's fidelity line shows how often",
+                version // 10000,
+            )
         taken = (at or datetime.now(UTC)).astimezone(UTC)
         snap = Snapshot(
             taken_at=taken,
             database=conn.info.dbname,
             server_version_num=version,
             settings=_settings(conn),
-            tables=_tables(conn, cfg.schemas),
+            tables=_tables(conn, cfg.schemas, version),
             queries=_top_queries(conn, cfg.top_queries, cfg.min_calls),
         )
         if dump_schema:
@@ -138,11 +150,13 @@ def _base_types(conn: psycopg.Connection[Any]) -> dict[int, int]:
     return out
 
 
-def _tables(conn: psycopg.Connection[Any], schemas: list[str]) -> list[TableStats]:
+def _tables(conn: psycopg.Connection[Any], schemas: list[str], version: int) -> list[TableStats]:
     base = _base_types(conn)
     by_oid: dict[int, TableStats] = {}
     with conn.cursor() as cur:
-        cur.execute(_TABLES, {"schemas": schemas})
+        # relallfrozen is new in 18
+        frozen = "c.relallfrozen" if version >= 180000 else "0"
+        cur.execute(_TABLES.replace("{allfrozen}", frozen), {"schemas": schemas})
         for oid, nsp, rel, kind, pages, tuples, allvis, allfrozen, live, dead in cur.fetchall():
             by_oid[oid] = TableStats(
                 schema=nsp,
@@ -174,7 +188,15 @@ def _tables(conn: psycopg.Connection[Any], schemas: list[str]) -> list[TableStat
             by_oid[relid].indexes.append(ix)
             idx_owner[ioid] = ix
 
-        cur.execute(_COLUMNS, {"oids": list(by_oid) + list(idx_owner)})
+        # pg_stats grew the range histogram columns in 17
+        ranges = (
+            "s.range_length_histogram::text, s.range_empty_frac, s.range_bounds_histogram::text"
+            if version >= 170000
+            else "null::text, null::real, null::text"
+        )
+        cur.execute(
+            _COLUMNS.replace("{range_cols}", ranges), {"oids": list(by_oid) + list(idx_owner)}
+        )
         for row in cur.fetchall():
             relid = row[0]
             col = _column(row, base)

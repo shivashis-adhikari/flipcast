@@ -10,7 +10,8 @@ For each query, this nudges the stats of the columns its plan filters on by
 about two standard errors of a sample of that size, one change at a time,
 and re-plans. Any change of shape is reported. n_distinct gets a wider
 range (half and double), because ANALYZE's estimator for it is known to be
-far less stable than its fractions.
+far less stable than its fractions. Correlation moves by its own sampling
+error, which is zero for a column stored in perfect order.
 """
 
 from __future__ import annotations
@@ -95,10 +96,14 @@ def nudges(t: TableStats, c: ColumnStats, n: int) -> Iterator[tuple[str, ColumnS
             yield f"n_distinct {nd:.3f} -> {v:.3f}", replace(c, n_distinct=v)
 
     if c.correlation is not None:
-        for d in (-0.1, 0.1):
-            v = min(max(c.correlation + d, -1.0), 1.0)
-            if v != c.correlation:
-                yield (f"correlation {c.correlation:.2f} -> {v:.2f}", replace(c, correlation=v))
+        # standard error of a rank correlation from n pairs is about
+        # (1 - rho^2) / sqrt(n): a perfectly ordered column reads 1.0 every time
+        rho = c.correlation
+        d = Z * (1 - rho * rho) / math.sqrt(n)
+        if d >= 0.005:
+            for v in (rho - d, rho + d):
+                v = min(max(v, -1.0), 1.0)
+                yield f"correlation {rho:.3f} -> {v:.3f}", replace(c, correlation=v)
 
 
 def check(

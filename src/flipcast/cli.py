@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import shlex
 import sys
 from datetime import UTC, datetime
@@ -97,8 +98,18 @@ def main(argv: list[str] | None = None) -> int:
     except psycopg.OperationalError as e:
         print(f"flipcast: could not connect: {str(e).strip()}", file=sys.stderr)
         return 1
+    except psycopg.Error as e:
+        print(f"flipcast: database error: {str(e).strip()}", file=sys.stderr)
+        if args.verbose:
+            raise
+        return 1
     except KeyboardInterrupt:
         return 130
+    except BrokenPipeError:
+        # `flipcast forecast | head`: stop quietly, like other unix tools
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        return 0
 
 
 def _config(args: argparse.Namespace) -> config.Config:
@@ -232,7 +243,11 @@ def _check(cfg: config.Config, snaps: list[Snapshot]) -> int:
         try:
             with db.connect(cfg.source_dsn) as c:
                 v = c.info.server_version
-                say(v >= db.MIN_SERVER_VERSION, f"source: PostgreSQL {v // 10000}.{v % 100}")
+                name = f"source: PostgreSQL {v // 10000}.{v % 100}"
+                if collect.MIN_SOURCE_VERSION <= v < db.MIN_SERVER_VERSION:
+                    print(f"warn  {name}; plans come from the 18 planner in the shadow")
+                else:
+                    say(v >= db.MIN_SERVER_VERSION, name)
                 row = c.execute(
                     "select 1 from pg_extension where extname = 'pg_stat_statements'"
                 ).fetchone()
