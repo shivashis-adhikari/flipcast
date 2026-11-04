@@ -10,7 +10,7 @@ from typing import Any
 import psycopg
 from psycopg import sql
 
-from . import advise, plans
+from . import advise, fragility, plans
 from .advise import Fix
 from .collect import tracked
 from .config import Config
@@ -65,6 +65,7 @@ class Forecast:
     stable: list[tuple[Query, str]]
     failed: list[tuple[Query, str]]
     tracks: dict[str, list[Point]]
+    fragile: list[fragility.Fragile] = field(default_factory=list)
 
 
 def run(
@@ -76,6 +77,7 @@ def run(
     scenarios: bool | None = None,
     verify: bool = True,
     keep_shadow: bool = False,
+    noise: bool = True,
 ) -> Forecast:
     if not snaps:
         raise ValueError("no snapshots to forecast from; run `flipcast collect` first")
@@ -151,6 +153,10 @@ def run(
                 # fixes that were checked and work first, ones that don't help last
                 p.fixes.sort(key=lambda f: {True: 0, None: 1, False: 2}[f.holds])
         preds.sort(key=lambda p: (p.switch.step, p.query.name))
+        fragile = []
+        if noise:
+            today = {name: pts[0] for name, pts in tracks.items()}
+            fragile = fragility.check(shadow, conn, queries, latest, today)
     finally:
         conn.close()
         if not keep_shadow:
@@ -170,6 +176,7 @@ def run(
         stable=stable,
         failed=failed,
         tracks=tracks,
+        fragile=fragile,
     )
 
 

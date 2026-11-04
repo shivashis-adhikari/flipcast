@@ -136,6 +136,29 @@ def forecast_text(fc: Forecast) -> str:
                     w(f"      - {f.why}")
                 if f.verified:
                     w(f"        checked in the shadow: {f.verified}")
+    if fc.fragile:
+        w("")
+        w("plans one ANALYZE away from flipping (sampling noise, no growth needed)")
+        for fr in fc.fragile:
+            w("")
+            w(f"  {fr.query.name}")
+            w(f"    {_sql_line(fr.query)}")
+            col = f"{fr.table}.{fr.column}"
+            w(f"    if ANALYZE comes back with {fr.change} on {col}: {fr.headline}")
+            if fr.cost_flipped is None:
+                w("    (couldn't make the planner build that plan with the real stats to price it)")
+            elif fr.cost_now > 0:
+                ratio = fr.cost_flipped / fr.cost_now
+                if ratio >= 1.2:
+                    w(
+                        f"    with the real stats that plan costs {ratio:.1f}x as much "
+                        f"({fr.cost_now:,.0f} -> {fr.cost_flipped:,.0f})"
+                    )
+                else:
+                    w(
+                        "    both plans cost about the same with the real stats, so this one"
+                        " would flip back and forth without much harm"
+                    )
     if fc.stable:
         w("")
         w(f"no switch within {fc.months} months")
@@ -226,6 +249,19 @@ def forecast_markdown(fc: Forecast) -> str:
                     line += f" Checked in the shadow: {f.verified}."
                 w(line)
             w("")
+    if fc.fragile:
+        w("## One ANALYZE away from flipping")
+        w("")
+        w("These plans change under ordinary ANALYZE sampling noise, with no growth at all.")
+        w("")
+        for fr in fc.fragile:
+            line = (
+                f"- `{fr.query.name}`: {fr.change} on `{fr.table}.{fr.column}` gives {fr.headline}"
+            )
+            if fr.cost_flipped is not None and fr.cost_now > 0:
+                line += f", {fr.cost_flipped / fr.cost_now:.1f}x the cost with the real stats"
+            w(line + ".")
+        w("")
     if fc.stable:
         w("## No switch predicted")
         w("")
@@ -284,6 +320,19 @@ def forecast_json(fc: Forecast) -> str:
             for p in fc.predictions
         ],
         "stable": [{"query": q.name, "shape": s} for q, s in fc.stable],
+        "fragile": [
+            {
+                "query": f.query.name,
+                "table": f.table,
+                "column": f.column,
+                "change": f.change,
+                "headline": f.headline,
+                "shape": f.shape,
+                "cost_now": f.cost_now,
+                "cost_flipped": f.cost_flipped,
+            }
+            for f in fc.fragile
+        ],
         "failed": [{"query": q.name, "error": e} for q, e in fc.failed],
     }
     return json.dumps(doc, indent=2) + "\n"

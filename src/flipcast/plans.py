@@ -260,5 +260,16 @@ def toggles_against(target: dict[str, Any], other: dict[str, Any]) -> list[str]:
     return sorted(set(off))
 
 
+def toggles_except(target: dict[str, Any]) -> list[str]:
+    """Every enable_* setting for a node type `target` doesn't use. Heavier
+    than toggles_against: with hash join off, the planner may reach for a
+    merge join instead of the nested loop we are after."""
+    t = node_types(target)
+    off = [g for nt, g in _DISABLE.items() if not t[nt]]
+    if not (t["Gather"] or t["Gather Merge"] or t["Parallel"]):
+        off.append("max_parallel_workers_per_gather")
+    return sorted(set(off))
+
+
 def cost(plan: dict[str, Any]) -> float:
     return float(plan["Total Cost"])

@@ -51,6 +51,11 @@ def main(argv: list[str] | None = None) -> int:
         help="skip the faster/slower growth runs (no month ranges)",
     )
     p.add_argument("--no-verify", action="store_true", help="don't test suggested fixes")
+    p.add_argument(
+        "--no-noise",
+        action="store_true",
+        help="skip the check for plans that ANALYZE sampling noise can flip today",
+    )
     p.add_argument("--keep-shadow", action="store_true", help="leave the shadow database")
     p.add_argument("--format", choices=("text", "markdown", "json"), default="text")
     p.add_argument("-o", "--output", help="write the report here instead of stdout")
@@ -172,6 +177,7 @@ def _run(args: argparse.Namespace) -> int:
             scenarios=False if args.no_scenarios else None,
             verify=not args.no_verify,
             keep_shadow=args.keep_shadow,
+            noise=not args.no_noise,
         )
         render = {
             "text": report.forecast_text,

@@ -114,21 +114,21 @@ def force(
     counted separately), so the reported cost is the plan's real cost.
     """
     want = plans.shape(target)
-    toggles = plans.toggles_against(target, other)
-    if not toggles:
-        return None
-    try:
-        with conn.transaction():
-            for g in toggles:
-                val = "0" if g == "max_parallel_workers_per_gather" else "off"
-                conn.execute("select set_config(%s, %s, true)", (g, val))
-            p = plans.explain(conn, render(q, stats.taken_at, stats))
-    except (ParamError, plans.ExplainError, psycopg.Error) as e:
-        log.debug("forcing %s failed: %s", q.name, e)
-        return None
-    if plans.shape(p) != want:
-        return None
-    return plans.cost(p)
+    for toggles in (plans.toggles_against(target, other), plans.toggles_except(target)):
+        if not toggles:
+            continue
+        try:
+            with conn.transaction():
+                for g in toggles:
+                    val = "0" if g == "max_parallel_workers_per_gather" else "off"
+                    conn.execute("select set_config(%s, %s, true)", (g, val))
+                p = plans.explain(conn, render(q, stats.taken_at, stats))
+        except (ParamError, plans.ExplainError, psycopg.Error) as e:
+            log.debug("forcing %s failed: %s", q.name, e)
+            continue
+        if plans.shape(p) == want:
+            return plans.cost(p)
+    return None
 
 
 def tables_in(plan: dict[str, Any]) -> set[str]:

@@ -41,6 +41,8 @@ class Scan:
     outputs: list[str]
     under_limit: bool
     sorted_above: bool
+    # every column any condition mentions, including IS NULL tests
+    cond_cols: list[str] = field(default_factory=list)
 
 
 def _cols_in(text: str | None, columns: set[str]) -> tuple[list[str], list[str]]:
@@ -68,6 +70,15 @@ def _cols_in(text: str | None, columns: set[str]) -> tuple[list[str], list[str]]
     return eq, rng
 
 
+def _mentioned(text: str | None, columns: set[str]) -> list[str]:
+    out: list[str] = []
+    for t in sqltext.tokens(text or ""):
+        name = t.text.strip('"')
+        if t.kind in ("ident", "qident") and name in columns and name not in out:
+            out.append(name)
+    return out
+
+
 def scans(plan: dict[str, Any], stats: Snapshot) -> list[Scan]:
     out: list[Scan] = []
 
@@ -81,10 +92,12 @@ def scans(plan: dict[str, Any], stats: Snapshot) -> list[Scan]:
             texts = [n.get("Filter"), n.get("Index Cond"), n.get("Recheck Cond")]
             eq: list[str] = []
             rng: list[str] = []
+            mentioned: list[str] = []
             for txt in texts:
                 e, r = _cols_in(txt, cols)
                 eq += [c for c in e if c not in eq]
                 rng += [c for c in r if c not in rng]
+                mentioned += [c for c in _mentioned(txt, cols) if c not in mentioned]
             fe, fr = _cols_in(n.get("Filter"), cols)
             outputs = []
             for o in n.get("Output", []):
@@ -107,6 +120,7 @@ def scans(plan: dict[str, Any], stats: Snapshot) -> list[Scan]:
                     outputs,
                     under_limit,
                     sorted_above,
+                    mentioned,
                 )
             )
         limit = under_limit or nt == "Limit"
