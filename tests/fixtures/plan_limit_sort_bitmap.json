@@ -1,0 +1,78 @@
+[
+ {
+  "Plan": {
+   "Node Type": "Limit",
+   "Parallel Aware": false,
+   "Async Capable": false,
+   "Startup Cost": 24011.64,
+   "Total Cost": 24011.69,
+   "Plan Rows": 20,
+   "Plan Width": 24,
+   "Disabled": false,
+   "Output": [
+    "id",
+    "kind",
+    "created_at"
+   ],
+   "Plans": [
+    {
+     "Node Type": "Sort",
+     "Parent Relationship": "Outer",
+     "Parallel Aware": false,
+     "Async Capable": false,
+     "Startup Cost": 24011.64,
+     "Total Cost": 24054.31,
+     "Plan Rows": 17068,
+     "Plan Width": 24,
+     "Disabled": false,
+     "Output": [
+      "id",
+      "kind",
+      "created_at"
+     ],
+     "Sort Key": [
+      "events.created_at DESC"
+     ],
+     "Plans": [
+      {
+       "Node Type": "Bitmap Heap Scan",
+       "Parent Relationship": "Outer",
+       "Parallel Aware": false,
+       "Async Capable": false,
+       "Relation Name": "events",
+       "Schema": "public",
+       "Alias": "events",
+       "Startup Cost": 208.7,
+       "Total Cost": 23557.47,
+       "Plan Rows": 17068,
+       "Plan Width": 24,
+       "Disabled": false,
+       "Output": [
+        "id",
+        "kind",
+        "created_at"
+       ],
+       "Recheck Cond": "(events.account_id = 3)",
+       "Plans": [
+        {
+         "Node Type": "Bitmap Index Scan",
+         "Parent Relationship": "Outer",
+         "Parallel Aware": false,
+         "Async Capable": false,
+         "Index Name": "events_account_id_idx",
+         "Startup Cost": 0.0,
+         "Total Cost": 204.44,
+         "Plan Rows": 17068,
+         "Plan Width": 0,
+         "Disabled": false,
+         "Index Cond": "(events.account_id = 3)"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "Query Identifier": 2290276137024072482
+ }
+]

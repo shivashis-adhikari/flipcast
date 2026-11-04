@@ -148,6 +148,8 @@ def run(
                 for f in p.fixes:
                     if f.kind in ("index", "setting"):
                         _verify(shadow, conn, p, f, base_steps, step_days)
+                # fixes that were checked and work first, ones that don't help last
+                p.fixes.sort(key=lambda f: {True: 0, None: 1, False: 2}[f.holds])
         preds.sort(key=lambda p: (p.switch.step, p.query.name))
     finally:
         conn.close()
@@ -260,8 +262,8 @@ def _verify(
         f.verified = f"switch moves out to month {hit * step_days / MONTH_DAYS:.0f}"
     else:
         f.holds = False
-        f.verified = "switch still happens"
-    if cost_then is not None and p.switch.after.cost > 0:
+        f.verified = f"does not help, the switch still happens at month {p.month:.0f}"
+    if cost_then is not None and p.switch.after.cost > 0 and f.holds:
         f.verified += (
             f"; cost at month {p.month:.0f}: {p.switch.after.cost:,.0f} -> {cost_then:,.0f}"
         )

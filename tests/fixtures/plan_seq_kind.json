@@ -1,0 +1,44 @@
+[
+ {
+  "Plan": {
+   "Node Type": "Gather",
+   "Parallel Aware": false,
+   "Async Capable": false,
+   "Startup Cost": 1000.0,
+   "Total Cost": 39390.34,
+   "Plan Rows": 70068,
+   "Plan Width": 24,
+   "Disabled": false,
+   "Output": [
+    "id",
+    "account_id",
+    "created_at"
+   ],
+   "Workers Planned": 2,
+   "Single Copy": false,
+   "Plans": [
+    {
+     "Node Type": "Seq Scan",
+     "Parent Relationship": "Outer",
+     "Parallel Aware": true,
+     "Async Capable": false,
+     "Relation Name": "events",
+     "Schema": "public",
+     "Alias": "events",
+     "Startup Cost": 0.0,
+     "Total Cost": 31383.54,
+     "Plan Rows": 29195,
+     "Plan Width": 24,
+     "Disabled": false,
+     "Output": [
+      "id",
+      "account_id",
+      "created_at"
+     ],
+     "Filter": "(events.kind = 'login'::text)"
+    }
+   ]
+  },
+  "Query Identifier": 1532312872361551702
+ }
+]

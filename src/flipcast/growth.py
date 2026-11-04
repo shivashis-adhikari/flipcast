@@ -78,7 +78,7 @@ def _pct_per_month(f: Curve, t0: float) -> float:
     return (b / a - 1.0) * 100 if a > 0 else 0.0
 
 
-def _fmt_count(x: float) -> str:
+def fmt_count(x: float) -> str:
     for unit, div in (("B", 1e9), ("M", 1e6), ("k", 1e3)):
         if abs(x) >= div:
             return f"{x / div:.1f}{unit}"
@@ -130,7 +130,7 @@ class RowModel:
 
     def describe(self) -> str:
         if self.kind == "constant":
-            return f"rows flat at {_fmt_count(self.last)}"
+            return f"rows flat at {fmt_count(self.last)}"
         return f"rows {self.kind}, {_pct_per_month(self, self.last_t):+.1f}%/month"
 
 
@@ -368,7 +368,7 @@ class ColumnModel:
             # would fall further behind every month.
             xs = [t for t, _ in hs] if self.codec.temporal else hrows
             self.hi_line = fit.linfit(xs, tops)
-            self.lo_line = fit.linfit(xs, [h[0] for h in hs])
+            self.lo_line = fit.linfit(xs, [b[0] for _, b in hs])
             self.lo_moves = self.hi_line.b > 0 and self.lo_line.b > 0.05 * self.hi_line.b
             self.t_latest_hist = hs[-1][0]
             self.rows_latest_hist = hrows[-1]
@@ -660,8 +660,8 @@ class TableModel:
         t0 = self.rows.last_t
         head = (
             f"{self.latest.qualname}: {self.rows.describe()}, "
-            f"{_fmt_count(self.rows(t0))} now, "
-            f"{_fmt_count(self.rows(t0 + horizon_days))} in "
+            f"{fmt_count(self.rows(t0))} now, "
+            f"{fmt_count(self.rows(t0 + horizon_days))} in "
             f"{horizon_days / MONTH_DAYS:.0f} months"
         )
         lines = [head]

@@ -1,0 +1,39 @@
+[
+ {
+  "Plan": {
+   "Node Type": "Bitmap Heap Scan",
+   "Parallel Aware": false,
+   "Async Capable": false,
+   "Relation Name": "events",
+   "Schema": "public",
+   "Alias": "events",
+   "Startup Cost": 767.45,
+   "Total Cost": 25838.3,
+   "Plan Rows": 70068,
+   "Plan Width": 24,
+   "Disabled": false,
+   "Output": [
+    "id",
+    "account_id",
+    "created_at"
+   ],
+   "Recheck Cond": "(events.kind = 'login'::text)",
+   "Plans": [
+    {
+     "Node Type": "Bitmap Index Scan",
+     "Parent Relationship": "Outer",
+     "Parallel Aware": false,
+     "Async Capable": false,
+     "Index Name": "events_kind_idx",
+     "Startup Cost": 0.0,
+     "Total Cost": 749.94,
+     "Plan Rows": 70068,
+     "Plan Width": 0,
+     "Disabled": false,
+     "Index Cond": "(events.kind = 'login'::text)"
+    }
+   ]
+  },
+  "Query Identifier": 1532312872361551702
+ }
+]

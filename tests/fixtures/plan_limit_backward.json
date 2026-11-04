@@ -1,0 +1,44 @@
+[
+ {
+  "Plan": {
+   "Node Type": "Limit",
+   "Parallel Aware": false,
+   "Async Capable": false,
+   "Startup Cost": 0.43,
+   "Total Cost": 74.83,
+   "Plan Rows": 20,
+   "Plan Width": 24,
+   "Disabled": false,
+   "Output": [
+    "id",
+    "kind",
+    "created_at"
+   ],
+   "Plans": [
+    {
+     "Node Type": "Index Scan",
+     "Parent Relationship": "Outer",
+     "Parallel Aware": false,
+     "Async Capable": false,
+     "Scan Direction": "Backward",
+     "Index Name": "events_created_at_idx",
+     "Relation Name": "events",
+     "Schema": "public",
+     "Alias": "events",
+     "Startup Cost": 0.43,
+     "Total Cost": 63495.93,
+     "Plan Rows": 17068,
+     "Plan Width": 24,
+     "Disabled": false,
+     "Output": [
+      "id",
+      "kind",
+      "created_at"
+     ],
+     "Filter": "(events.account_id = 3)"
+    }
+   ]
+  },
+  "Query Identifier": 2290276137024072482
+ }
+]

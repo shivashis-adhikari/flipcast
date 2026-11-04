@@ -152,13 +152,18 @@ def choose(
 ) -> tuple[str, Curve]:
     """Pick the candidate with the lowest rolling error.
 
-    candidates go simplest first. a more complex one has to beat every simpler
-    one by `slack` (relative) to be picked, so two snapshots that differ by
-    noise don't produce a confident trend.
+    candidates go simplest first, and the first one must be the no-trend
+    model. a more complex one has to beat every simpler one by `slack`
+    (relative) to be picked. with 4+ points a trend also has to be there at
+    all: a plain line through the points needs a slope of at least two
+    standard errors. without that check, noise around a flat value wins
+    every so often, and twelve months of extrapolated noise is a fake switch.
     """
     if len(xs) < 3:
         name, fitter = candidates[0] if len(xs) < 2 else candidates[min(1, len(candidates) - 1)]
         return name, fitter(xs, ys)
+    if len(xs) >= 4 and not has_trend(xs, ys):
+        return candidates[0][0], candidates[0][1](xs, ys)
     best_name, best_fit = candidates[0]
     best_err = rolling_error(xs, ys, best_fit, scale=scale)
     for name, fitter in candidates[1:]:
@@ -166,6 +171,15 @@ def choose(
         if err < best_err * (1 - slack) - 1e-12:
             best_name, best_fit, best_err = name, fitter, err
     return best_name, best_fit(xs, ys)
+
+
+def has_trend(xs: Sequence[float], ys: Sequence[float], t: float = 2.0) -> bool:
+    ln = linfit(xs, ys)
+    if ln.b == 0:
+        return False
+    if math.isinf(ln.se_b) or ln.se_b == 0:
+        return ln.se_b == 0  # a perfect line is a trend
+    return abs(ln.b) >= t * ln.se_b
 
 
 def interp(x: float, xs: Sequence[float], ys: Sequence[float]) -> float:

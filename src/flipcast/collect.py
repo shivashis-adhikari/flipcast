@@ -290,13 +290,21 @@ def dump_schema_sql(pg_dump: list[str], dsn: str) -> str:
 
 
 def tracked(configured: list[Query], snap: Snapshot) -> list[Query]:
-    """Config queries first, then pg_stat_statements entries not already covered."""
+    """Config queries first, then pg_stat_statements entries not already covered.
+
+    A statement whose text matches a config query is merged into it (its
+    timings attach to the config entry). If the config entry plans with its
+    own parameter values, the statement is also kept as "<name> (generic)",
+    because that is the plan a prepared statement ends up running.
+    """
     by_id = {q.queryid: q for q in snap.queries}
+    by_text = {sqltext.fingerprint(q.query): q for q in snap.queries}
     out: list[Query] = []
     claimed: set[str] = set()
+    generic: list[Query] = []
     for q in configured:
+        st = None
         if q.queryid is not None:
-            claimed.add(q.queryid)
             st = by_id.get(q.queryid)
             if st is None:
                 log.info(
@@ -304,25 +312,42 @@ def tracked(configured: list[Query], snap: Snapshot) -> list[Query]:
                 )
                 if not q.sql:
                     continue
-            else:
-                q = Query(
-                    name=q.name,
-                    sql=q.sql or st.query,
-                    params=q.params,
-                    source="config",
-                    queryid=q.queryid,
-                    calls=st.calls,
-                    mean_ms=st.mean_ms,
-                    total_ms=st.total_ms,
+        elif q.sql:
+            st = by_text.get(sqltext.fingerprint(q.sql))
+        if st is not None:
+            claimed.add(st.queryid)
+            q = Query(
+                name=q.name,
+                sql=q.sql or st.query,
+                params=q.params,
+                source="config",
+                queryid=st.queryid,
+                calls=st.calls,
+                mean_ms=st.mean_ms,
+                total_ms=st.total_ms,
+            )
+            if q.params is not None and sqltext.max_param(st.query):
+                generic.append(
+                    Query(
+                        name=f"{q.name} (generic)",
+                        sql=sqltext.fix_typed_params(st.query),
+                        params=None,
+                        source="pg_stat_statements",
+                        queryid=st.queryid,
+                        calls=st.calls,
+                        mean_ms=st.mean_ms,
+                        total_ms=st.total_ms,
+                    )
                 )
         out.append(q)
+    out.extend(generic)
     for st in snap.queries:
         if st.queryid in claimed:
             continue
         out.append(
             Query(
                 name=f"pss:{st.queryid}",
-                sql=st.query,
+                sql=sqltext.fix_typed_params(st.query),
                 params=None,
                 source="pg_stat_statements",
                 queryid=st.queryid,

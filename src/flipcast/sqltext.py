@@ -218,3 +218,87 @@ def mentions_clock(sql: str) -> bool:
             if low in _CLOCK_FUNCS or low in _CLOCK_KEYWORDS:
                 return True
     return False
+
+
+# pg_stat_statements replaces the string in a typed literal, so
+# `interval '30 days'` comes back as `interval $3`, which doesn't parse.
+_LITERAL_TYPES = {
+    "interval",
+    "timestamp",
+    "timestamptz",
+    "date",
+    "time",
+    "timetz",
+    "numeric",
+    "decimal",
+    "bigint",
+    "int",
+    "integer",
+    "int2",
+    "int4",
+    "int8",
+    "smallint",
+    "real",
+    "text",
+    "uuid",
+    "json",
+    "jsonb",
+    "boolean",
+    "bool",
+    "inet",
+    "cidr",
+    "money",
+    "bytea",
+    "varchar",
+}
+
+
+def fix_typed_params(sql: str) -> str:
+    """Rewrite `type $n` to `$n::type`."""
+    toks = list(tokens(sql))
+    out: list[str] = []
+    k = 0
+    while k < len(toks):
+        t = toks[k]
+        if t.kind == "ident" and t.text.lower() in _LITERAL_TYPES:
+            nxt = _next_code(toks, k + 1)
+            prev = _prev_code(toks, k - 1)
+            # skip "::interval $1" never happens, but "x::int $1" would be a syntax
+            # error anyway; only rewrite when the type word starts an expression
+            if (
+                nxt is not None
+                and toks[nxt].kind == "param"
+                and not (prev is not None and toks[prev].text in (":", "."))
+            ):
+                out.append(f"{toks[nxt].text}::{t.text}")
+                k = nxt + 1
+                continue
+        out.append(t.text)
+        k += 1
+    return "".join(out)
+
+
+def _prev_code(toks: list[Token], k: int) -> int | None:
+    while k >= 0:
+        if toks[k].kind not in ("space", "comment"):
+            return k
+        k -= 1
+    return None
+
+
+def fingerprint(sql: str) -> str:
+    """Query text with constants and parameters folded to ?, for matching a
+    config query against pg_stat_statements, which does the same folding."""
+    parts = []
+    for t in tokens(sql):
+        if t.kind == "comment":
+            continue
+        if t.kind == "space":
+            parts.append(" ")
+        elif t.kind == "ident":
+            parts.append(t.text.lower())
+        elif t.kind in ("string", "number", "param"):
+            parts.append("?")
+        else:
+            parts.append(t.text)
+    return " ".join("".join(parts).split()).rstrip(";").strip()

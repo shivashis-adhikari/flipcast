@@ -68,12 +68,13 @@ catalog_size(Oid relid, CatalogSize *out)
  * metapage, which is empty here. height is about log_fanout(leaf pages).
  *
  * tuples per leaf page overstates the fanout of inner pages: leaves get
- * deduplicated, inner pages don't, and inner pages sit around 70% full. so
- * the leaf density is capped. 350 matched real indexes on int, bigint and
- * timestamptz keys in testing, and one level off only moves the descent cost
- * by 50 * cpu_operator_cost.
+ * deduplicated, inner pages don't, CREATE INDEX fills inner pages to 70%, and
+ * with repeated keys each pivot keeps a heap TID as a tiebreaker. measured on
+ * int4, int8 and timestamptz indexes, inner pages held 150-285 downlinks, so
+ * the leaf density is capped at 200. one level off only moves the descent
+ * cost by 50 * cpu_operator_cost per index probe.
  */
-#define MAX_INNER_FANOUT 350.0
+#define MAX_INNER_FANOUT 200.0
 
 static int
 guess_btree_height(BlockNumber pages, double tuples)

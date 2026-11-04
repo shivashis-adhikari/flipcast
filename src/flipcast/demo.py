@@ -25,11 +25,11 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
-from . import collect, db
+from . import collect, db, sqltext
 from .config import Config
 from .config import load as load_config
 from .snapshot import Snapshot, Store
-from .workload import Query, render
+from .workload import ParamError, Query, render
 
 log = logging.getLogger(__name__)
 
@@ -199,10 +199,15 @@ def run(
         for m, (lo, hi) in enumerate(_months(start, months)):
             n_acc = base_accounts + 40 * m
             n_ev = round(base_events * growth**m)
+            # the loader is not workload, keep it out of pg_stat_statements
+            if has_pss:
+                conn.execute("set pg_stat_statements.track = 'none'")
             conn.execute(INSERT_ACCOUNTS, {"n": n_acc, "lo": lo, "hi": hi})
             conn.execute(
                 INSERT_EVENTS, {"n": n_ev, "lo": lo, "hi": hi, "export": export_share(m, months)}
             )
+            if has_pss:
+                conn.execute("reset pg_stat_statements.track")
             conn.execute("analyze accounts")
             conn.execute("analyze events")
             if has_pss:
@@ -234,16 +239,20 @@ def _try_pss(conn: psycopg.Connection[Any]) -> bool:
 
 
 def _exercise(conn: psycopg.Connection[Any], queries: list[Query], at: datetime) -> None:
-    # pg_stat_statements wants real executions. run each query as of the
-    # simulated month end, a few times.
+    """Run the parameterized queries a few times so pg_stat_statements has
+    timings. Queries that call now() are skipped: run for real they'd use
+    today's date instead of the simulated one, and the timings would be
+    for an empty range."""
     stub = Snapshot(taken_at=at, database="", server_version_num=0)
     raw = psycopg.RawCursor(conn)
     try:
         for q in queries:
+            if sqltext.mentions_clock(q.sql) or q.params is None:
+                continue
             try:
                 r = render(q, at, stub)
-            except Exception:
-                continue
+            except ParamError:
+                continue  # mcv/quantile params need stats
             for _ in range(3):
                 raw.execute(r.sql, r.values)
                 raw.fetchall()
