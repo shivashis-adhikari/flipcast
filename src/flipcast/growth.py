@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import itertools
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import ClassVar
@@ -98,6 +98,21 @@ def _recent(fitter: fit.Fitter) -> fit.Fitter:
         return fitter(xs[-k:], ys[-k:])
 
     return f
+
+
+# for bounded quantities (null_frac, correlation): no trend, a trend over
+# everything, or a trend over the newer half. correlation often climbs while a
+# table is young and then sags as rows scatter, which only the last one sees.
+_SHARE_CANDIDATES: list[tuple[str, fit.Fitter]] = [
+    ("constant", fit.constant),
+    ("linear", fit.linear),
+    ("linear, recent", _recent(fit.linear)),
+]
+
+
+def _anchor(curve: Curve, t_last: float, y_last: float) -> Curve:
+    shift = y_last - curve(t_last)
+    return lambda t: curve(t) + shift
 
 
 class RowModel:
@@ -209,12 +224,9 @@ class ColumnModel:
         rws = [h[1] for h in history]
         cs = [h[2] for h in history]
 
-        self.null_kind, self.null_curve = fit.choose(
-            ts,
-            [c.null_frac for c in cs],
-            [("constant", fit.constant), ("linear", fit.linear)],
-            scale=1.0,
-        )
+        nulls = [c.null_frac for c in cs]
+        self.null_kind, curve = fit.choose(ts, nulls, _SHARE_CANDIDATES, scale=1.0)
+        self.null_curve = _anchor(curve, ts[-1], nulls[-1])
         self._fit_ndistinct(ts, rws, cs)
         self._fit_mcv(ts, rws, cs)
         self._fit_histogram(ts, rws, cs)
@@ -222,12 +234,9 @@ class ColumnModel:
             (t, c.correlation) for t, c in zip(ts, cs, strict=True) if c.correlation is not None
         ]
         if corr:
-            self.corr_kind, self.corr_curve = fit.choose(
-                [t for t, _ in corr],
-                [c for _, c in corr],
-                [("constant", fit.constant), ("linear", fit.linear)],
-                scale=1.0,
-            )
+            cts, cvs = [t for t, _ in corr], [c for _, c in corr]
+            self.corr_kind, curve = fit.choose(cts, cvs, _SHARE_CANDIDATES, scale=1.0)
+            self.corr_curve = _anchor(curve, cts[-1], cvs[-1])
         else:
             self.corr_kind, self.corr_curve = "none", fit.constant([0.0], [0.0])
 
@@ -248,25 +257,23 @@ class ColumnModel:
         self.nd_last = absd[-1]
         if len(pairs) < 2 or max(p[0] for p in pairs) < 1.05 * min(p[0] for p in pairs):
             self.nd_kind = "constant"
-            self.nd_curve: Curve = fit.constant([0.0], [self.nd_last])
             return
 
-        def power(xs: Sequence[float], ys: Sequence[float]) -> Curve:
-            a, k = _power_fit(xs, ys)
-            return lambda r: math.exp(a + k * math.log(max(r, 1.0)))
-
-        xs, ys = [p[0] for p in pairs], [p[1] for p in pairs]
-        self.nd_kind, self.nd_curve = fit.choose(
-            xs, ys, [("constant", fit.constant), ("power law", power)]
+        ts_ = [t for t, r, d in zip(ts, rws, absd, strict=True) if r > 0 and d > 0]
+        self.nd_kind, self.nd_pred = _choose_distinct(
+            ts_, [p[0] for p in pairs], [p[1] for p in pairs]
         )
-        self.nd_exp = _power_fit(xs, ys)[1]
+        self.nd_t_last, self.nd_r_last = ts_[-1], pairs[-1][0]
+        self.nd_exp = _power_fit([p[0] for p in pairs], [p[1] for p in pairs])[1]
 
-    def distinct(self, r: float) -> float:
+    def distinct(self, t: float, r: float) -> float:
         if self.nd_kind == "proportional":
             return self.nd_ratio * r
-        d = self.nd_curve(r)
-        if self.nd_kind == "power law":
-            d *= self.nd_last / max(self.nd_curve(self.rows.last), 1e-9)
+        if self.nd_kind == "constant":
+            return max(1.0, self.nd_last)
+        # anchored on the latest value, like the row model
+        base = self.nd_pred(self.nd_t_last, self.nd_r_last)
+        d = self.nd_pred(t, r) * (self.nd_last / base if base > 0 else 1.0)
         return max(1.0, d)
 
     # MCV list
@@ -474,7 +481,7 @@ class ColumnModel:
         null_frac = min(max(self.null_curve(clock.eff), 0.0), 1.0)
         if self.null_kind == "constant":
             null_frac = c.null_frac
-        distinct = min(self.distinct(rows_then), max(rows_then * (1 - null_frac), 1.0))
+        distinct = min(self.distinct(clock.eff, rows_then), max(rows_then * (1 - null_frac), 1.0))
         if self.nd_kind == "proportional":
             n_distinct = -min(self.nd_ratio, 1.0)
         elif rows_then > 0 and distinct > NDISTINCT_RATIO_SWITCH * rows_then:
@@ -507,8 +514,13 @@ class ColumnModel:
     def describe(self, horizon_days: float) -> list[str]:
         out = []
         t0 = self.rows.last_t
-        if self.nd_kind == "power law":
-            out.append(f"n_distinct ~ rows^{self.nd_exp:.2f}")
+        if self.nd_kind.startswith("power law"):
+            out.append(f"n_distinct ~ rows^{self.nd_exp:.2f} ({self.nd_kind})")
+        elif self.nd_kind == "linear in time":
+            per_month = self.distinct(t0 + MONTH_DAYS, self.rows(t0 + MONTH_DAYS)) - self.distinct(
+                t0, self.rows(t0)
+            )
+            out.append(f"n_distinct +{per_month:,.0f}/month")
         elif self.nd_kind == "proportional":
             out.append(f"n_distinct {self.nd_ratio:.3g} x rows")
         if self.null_kind != "constant":
@@ -537,11 +549,73 @@ class ColumnModel:
             )
         elif self.hist_kind == "drift":
             out.append("histogram drifting")
-        if self.corr_kind == "linear" and self.latest.correlation is not None:
+        if self.corr_kind.startswith("linear") and self.latest.correlation is not None:
             then = min(max(self.corr_curve(t0 + horizon_days), -1), 1)
             if abs(then - self.latest.correlation) > 0.05:
                 out.append(f"correlation {self.latest.correlation:.2f} -> {then:.2f}")
         return out
+
+
+DistinctPred = Callable[[float, float], float]  # (t, rows) -> distinct
+
+
+def _choose_distinct(ts: list[float], rs: list[float], ds: list[float]) -> tuple[str, DistinctPred]:
+    """n_distinct candidates, some driven by rows and some by time.
+
+    a column like events.account_id has as many distinct values as there are
+    accounts, which grow on their own schedule. as a power of the events
+    count its exponent keeps sinking, so a single power law overshoots and a
+    line in time (or a power law over recent snapshots) does better.
+    """
+
+    def power(t: list[float], r: list[float], d: list[float]) -> DistinctPred:
+        a, k = _power_fit(r, d)
+        return lambda _t, rr: math.exp(a + k * math.log(max(rr, 1.0)))
+
+    def power_recent(t: list[float], r: list[float], d: list[float]) -> DistinctPred:
+        n = max(3, math.ceil(len(r) / 2))
+        return power(t[-n:], r[-n:], d[-n:])
+
+    def time_line(t: list[float], r: list[float], d: list[float]) -> DistinctPred:
+        n = max(3, math.ceil(len(t) / 2))
+        ln = fit.linfit(t[-n:], d[-n:])
+        return lambda tt, _r: ln(tt)
+
+    def flat(t: list[float], r: list[float], d: list[float]) -> DistinctPred:
+        v = d[-1]
+        return lambda _t, _r: v
+
+    Builder = Callable[[list[float], list[float], list[float]], DistinctPred]
+    cands: list[tuple[str, Builder]] = [
+        ("constant", flat),
+        ("power law", power),
+        ("power law, recent", power_recent),
+        ("linear in time", time_line),
+    ]
+    n = len(ts)
+    if n < 3:
+        name, b = cands[0] if n < 2 else cands[1]
+        return name, b(ts, rs, ds)
+    if n >= 4 and not fit.has_trend(ts, ds):
+        return "constant", flat(ts, rs, ds)
+    min_train = 2 if n < 6 else 3
+    best_name, best_err = "", math.inf
+    best_b: Builder = flat
+    for name, b in cands:
+        num = den = 0.0
+        for k in range(min_train, n):
+            pred = b(ts[:k], rs[:k], ds[:k])(ts[k], rs[k])
+            # anchor on the last training point, the way projections are anchored
+            last = b(ts[:k], rs[:k], ds[:k])(ts[k - 1], rs[k - 1])
+            if last > 0:
+                pred *= ds[k - 1] / last
+            w = 0.5 ** ((n - 1 - k) / fit.HALF_LIFE)
+            num += w * abs(pred - ds[k]) / max(ds[k], 1.0)
+            den += w
+        err = num / den
+        if not best_name or err < best_err * 0.9 - 1e-12:
+            best_name, best_b, best_err = name, b, err
+    return best_name, best_b(ts, rs, ds)
 
 
 def _power_fit(xs: Sequence[float], ys: Sequence[float]) -> tuple[float, float]:

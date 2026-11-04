@@ -1,0 +1,23 @@
+# one PostgreSQL 18 with flipcast_sizes on localhost:5433. good enough to run
+# the demo (source and shadow on the same server) or to be the shadow for a
+# real database somewhere else.
+#
+# the server listens on 5433 inside the container too, so a dsn that works
+# from the host also works for `docker compose exec postgres pg_dump`.
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: flipcast-postgres:18
+    command: ["postgres", "-c", "port=5433",
+              "-c", "shared_preload_libraries=pg_stat_statements",
+              "-c", "pg_stat_statements.track=all"]
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5433"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-p", "5433"]
+      interval: 2s
+      retries: 30

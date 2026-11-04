@@ -195,6 +195,9 @@ def run(
 
     with db.connect(source_dsn, application_name="flipcast-demo") as conn:
         conn.execute(SCHEMA)
+        # same data every run. ANALYZE still samples at random, like it does
+        # in production, so stats and plans can differ a little between runs.
+        conn.execute("select setseed(0.42)")
         has_pss = _try_pss(conn)
         for m, (lo, hi) in enumerate(_months(start, months)):
             n_acc = base_accounts + 40 * m

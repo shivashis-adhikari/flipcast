@@ -155,14 +155,15 @@ def choose(
     candidates go simplest first, and the first one must be the no-trend
     model. a more complex one has to beat every simpler one by `slack`
     (relative) to be picked. with 4+ points a trend also has to be there at
-    all: a plain line through the points needs a slope of at least two
-    standard errors. without that check, noise around a flat value wins
+    all: a plain line through the points, or through the newer half, needs a
+    slope of at least two standard errors. without that check, noise around a flat value wins
     every so often, and twelve months of extrapolated noise is a fake switch.
     """
     if len(xs) < 3:
         name, fitter = candidates[0] if len(xs) < 2 else candidates[min(1, len(candidates) - 1)]
         return name, fitter(xs, ys)
-    if len(xs) >= 4 and not has_trend(xs, ys):
+    half = max(4, math.ceil(len(xs) / 2))
+    if len(xs) >= 4 and not (has_trend(xs, ys) or has_trend(xs[-half:], ys[-half:])):
         return candidates[0][0], candidates[0][1](xs, ys)
     best_name, best_fit = candidates[0]
     best_err = rolling_error(xs, ys, best_fit, scale=scale)

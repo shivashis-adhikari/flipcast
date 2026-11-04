@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e '.[dev]'
+      - run: ruff check src tests
+      - run: ruff format --check src tests
+      - run: mypy
+      - run: pytest -q tests/unit
+
+  postgres:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: build postgres 18 + flipcast_sizes
+        run: docker build -t flipcast-postgres:18 -f docker/Dockerfile .
+      - name: start it
+        run: |
+          docker run -d --name pg -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust flipcast-postgres:18
+          for i in $(seq 60); do docker exec pg pg_isready -U postgres -q && break; sleep 1; done
+          docker exec pg psql -U postgres -c "load 'flipcast_sizes'; show flipcast_sizes.enabled"
+      - run: pip install -e '.[dev]'
+      - name: integration tests
+        env:
+          FLIPCAST_TEST_DSN: postgresql://postgres@localhost:5432/postgres
+          FLIPCAST_TEST_PG_DUMP: docker exec -i pg pg_dump
+        run: pytest -q tests/integration
+      - name: demo, backtest, forecast
+        run: |
+          flipcast demo --dsn postgresql://postgres@localhost:5432/postgres --dir demo \
+            --pg-dump "docker exec -i pg pg_dump"
+          flipcast -c demo/flipcast.toml backtest | tee backtest.txt
+          flipcast -c demo/flipcast.toml forecast | tee forecast.txt
+          flipcast -c demo/flipcast.toml forecast --format markdown -o forecast.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-reports
+          path: |
+            backtest.txt
+            forecast.txt
+            forecast.md
