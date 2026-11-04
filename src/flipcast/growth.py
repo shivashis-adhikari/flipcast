@@ -26,9 +26,11 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from typing import ClassVar
 
 from . import fit, pgarray
 from .fit import Curve
+from .share import ShareModel
 from .snapshot import ColumnStats, IndexStats, Snapshot, TableStats
 from .values import Codec, codec_for, decode_all
 
@@ -83,15 +85,35 @@ def _fmt_count(x: float) -> str:
     return f"{x:.0f}"
 
 
+def _recent(fitter: fit.Fitter) -> fit.Fitter:
+    """The same curve, fit on the newer half of the points only.
+
+    growth rarely follows one curve for a year. a table growing 20% a month
+    on top of a small base looks exponential early and linear-ish late, and
+    the late part is what matters for the next few months.
+    """
+
+    def f(xs: Sequence[float], ys: Sequence[float]) -> Curve:
+        k = max(3, math.ceil(len(xs) / 2))
+        return fitter(xs[-k:], ys[-k:])
+
+    return f
+
+
 class RowModel:
+    CANDIDATES: ClassVar[list[tuple[str, fit.Fitter]]] = [
+        ("constant", fit.constant),
+        ("linear", fit.linear),
+        ("exponential", fit.exponential),
+        ("linear, recent", _recent(fit.linear)),
+        ("accelerating", fit.accelerating),
+        ("exponential, recent", _recent(fit.exponential)),
+    ]
+
     def __init__(self, s: Series):
         self.last_t = s.t[-1]
         self.last = s.y[-1]
-        self.kind, self.curve = fit.choose(
-            s.t,
-            s.y,
-            [("constant", fit.constant), ("linear", fit.linear), ("exponential", fit.exponential)],
-        )
+        self.kind, self.curve = fit.choose(s.t, s.y, self.CANDIDATES)
         self.rel_se = _relative_slope_se(s, self.kind)
         # anchor the curve on the latest point. a fitted line that misses
         # today's value by 3% would put a fake jump between step 0 and step 1.
@@ -102,7 +124,7 @@ class RowModel:
     def __call__(self, t: float) -> float:
         if self.kind == "constant":
             return self.last
-        if self.kind == "exponential":
+        if self.kind.startswith("exponential"):
             return max(0.0, self.curve(t) * self.scale)
         return max(0.0, self.curve(t) + self.shift)
 
@@ -115,9 +137,29 @@ class RowModel:
 def _relative_slope_se(s: Series, kind: str) -> float:
     if len(s) < 3 or kind == "constant":
         return math.inf
-    ys = [math.log(y) for y in s.y] if kind == "exponential" and min(s.y) > 0 else s.y
-    ln = fit.linfit(s.t, ys)
-    if ln.b == 0:
+    t, y = s.t, s.y
+    if kind == "accelerating":
+        # spread of the insert rate around its trend, in log space: that is
+        # directly a relative error on how fast rows arrive
+        rates = [
+            (y1 - y0) / (t1 - t0)
+            for t0, t1, y0, y1 in zip(t, t[1:], y, y[1:], strict=False)
+            if t1 > t0 and y1 > y0
+        ]
+        if len(rates) < 3:
+            return math.inf
+        mids = list(range(len(rates)))
+        logs = [math.log(r) for r in rates]
+        ln = fit.linfit(mids, logs)
+        rss = sum((v - ln(x)) ** 2 for x, v in zip(mids, logs, strict=True))
+        return math.sqrt(rss / (len(rates) - 2) * (1 + 1 / len(rates)))
+    if kind.endswith("recent"):
+        k = max(3, math.ceil(len(t) / 2))
+        t, y = t[-k:], y[-k:]
+    if kind.startswith("exponential") and min(y) > 0:
+        y = [math.log(v) for v in y]
+    ln = fit.linfit(t, y)
+    if ln.b == 0 or len(t) < 3:
         return math.inf
     return abs(ln.se_b / ln.b)
 
@@ -174,7 +216,7 @@ class ColumnModel:
             scale=1.0,
         )
         self._fit_ndistinct(ts, rws, cs)
-        self._fit_mcv(ts, cs)
+        self._fit_mcv(ts, rws, cs)
         self._fit_histogram(ts, rws, cs)
         corr = [
             (t, c.correlation) for t, c in zip(ts, cs, strict=True) if c.correlation is not None
@@ -229,10 +271,9 @@ class ColumnModel:
 
     # MCV list
 
-    def _fit_mcv(self, ts: list[float], cs: list[ColumnStats]) -> None:
+    def _fit_mcv(self, ts: list[float], rws: list[float], cs: list[ColumnStats]) -> None:
         self.mcv_values: list[str | None] = []
-        self.mcv_curves: list[Curve] = []
-        self.mcv_kinds: list[str] = []
+        self.mcv_models: list[ShareModel] = []
         self.mcv_closed = False
         if not self.latest.mcv or not self.latest.mcv_freqs:
             return
@@ -242,7 +283,7 @@ class ColumnModel:
         self.mcv_closed = (
             self.latest.histogram is None and mass >= (1 - self.latest.null_frac) - 0.01
         )
-
+        growing = len(rws) >= 2 and rws[-1] > 1.05 * max(rws[0], 1.0)
         past: list[dict[str | None, float]] = []
         for c in cs:
             if c.mcv and c.mcv_freqs:
@@ -250,20 +291,8 @@ class ColumnModel:
             else:
                 past.append({})
         for v in self.mcv_values:
-            s = Series()
-            for t, d in zip(ts, past, strict=True):
-                if v in d:
-                    s.add(t, d[v])
-            kind, curve = fit.choose(
-                s.t, s.y, [("constant", fit.constant), ("logistic", fit.logistic)]
-            )
-            # anchor on today's share
-            if kind != "constant":
-                now = curve(s.t[-1])
-                base = fit.logit(s.y[-1]) - fit.logit(now)
-                curve = _shift_logit(curve, base)
-            self.mcv_kinds.append(kind)
-            self.mcv_curves.append(curve)
+            pts = [(t, r, d[v]) for t, r, d in zip(ts, rws, past, strict=True) if v in d]
+            self.mcv_models.append(ShareModel(pts, growing))
 
     def mcv_at(
         self, t_eff: float, null_frac: float, distinct: float
@@ -275,8 +304,7 @@ class ColumnModel:
             return self.mcv_values, list(self.latest.mcv_freqs or [])
         cap = max(0.0, 1.0 - null_frac)
         pairs = [
-            (v, min(max(c(t_eff), 0.0), 1.0))
-            for v, c in zip(self.mcv_values, self.mcv_curves, strict=True)
+            (v, m(t_eff, self.rows)) for v, m in zip(self.mcv_values, self.mcv_models, strict=True)
         ]
         total = sum(f for _, f in pairs)
         if self.mcv_closed and total > 0:
@@ -487,12 +515,12 @@ class ColumnModel:
             then = min(max(self.null_curve(t0 + horizon_days), 0), 1)
             out.append(f"null_frac {self.latest.null_frac:.3f} -> {then:.3f}")
         moving = []
-        for v, k, c in zip(self.mcv_values, self.mcv_kinds, self.mcv_curves, strict=True):
-            if k == "constant":
+        for v, m in zip(self.mcv_values, self.mcv_models, strict=True):
+            if m.kind == "constant":
                 continue
-            a, b = c(t0), c(t0 + horizon_days)
+            a, b = m(t0, self.rows), m(t0 + horizon_days, self.rows)
             if abs(b - a) >= 0.01:
-                moving.append((abs(b - a), f"{v!s:.20}: {a:.1%} -> {b:.1%}"))
+                moving.append((abs(b - a), f"{v!s:.20}: {a:.1%} -> {b:.1%} ({m.kind})"))
         if moving:
             moving.sort(reverse=True)
             out.append("mcv " + ", ".join(m for _, m in moving[:3]))
@@ -522,10 +550,6 @@ def _power_fit(xs: Sequence[float], ys: Sequence[float]) -> tuple[float, float]:
     # refit the intercept with the clamped slope
     a = sum(math.log(y) - k * math.log(x) for x, y in zip(xs, ys, strict=True)) / len(xs)
     return a, k
-
-
-def _shift_logit(curve: Curve, delta: float) -> Curve:
-    return lambda t: fit.expit(fit.logit(curve(t)) + delta)
 
 
 def _resample(bounds: list[float], nb: int) -> list[float]:
@@ -559,8 +583,15 @@ def _drift_beats_static(hs: list[tuple[float, list[float]]], span: float) -> boo
 
 
 class TableModel:
-    def __init__(self, history: list[tuple[float, TableStats]], default_target: int):
+    def __init__(
+        self,
+        history: list[tuple[float, TableStats]],
+        default_target: int,
+        *,
+        rows_only: bool = False,
+    ):
         self.latest = history[-1][1]
+        self.rows_only = rows_only
         rows = Series()
         pts = [(t, ts) for t, ts in history if ts.reltuples >= 0]
         if not pts:
@@ -609,7 +640,10 @@ class TableModel:
             ip = self.index_pages[ix.name](rows)
             itup = rows * (self.index_frac[ix.name] if ix.partial else 1.0)
             indexes.append(replace(ix, relpages=max(1, round(ip)), reltuples=itup))
-        cols = [self.columns[c.key].at(clock, rows) for c in t.columns]
+        if self.rows_only:
+            cols = list(t.columns)
+        else:
+            cols = [self.columns[c.key].at(clock, rows) for c in t.columns]
         return replace(
             t,
             reltuples=rows,
@@ -639,7 +673,10 @@ class TableModel:
 
 
 class GrowthModel:
-    def __init__(self, snaps: list[Snapshot]):
+    """rows_only=True is the naive baseline for backtests: grow row and page
+    counts, leave every column statistic as it was."""
+
+    def __init__(self, snaps: list[Snapshot], *, rows_only: bool = False):
         if not snaps:
             raise ValueError("need at least one snapshot")
         self.snaps = sorted(snaps, key=lambda s: s.taken_at)
@@ -656,7 +693,7 @@ class GrowthModel:
                 other = s.table(tab.qualname)
                 if other is not None:
                     history.append((days(s.taken_at), other))
-            self.tables[tab.qualname] = TableModel(history, default_target)
+            self.tables[tab.qualname] = TableModel(history, default_target, rows_only=rows_only)
 
     def band(self) -> float:
         """Relative uncertainty in the growth rate, for the slow/fast scenarios.

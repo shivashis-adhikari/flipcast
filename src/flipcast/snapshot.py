@@ -130,7 +130,14 @@ class Snapshot:
 
     @property
     def schema_hash(self) -> str:
-        return hashlib.sha256(self.schema_sql.encode()).hexdigest()[:12]
+        # pg_dump 18 writes a random key on its \restrict line, and version
+        # comments change with minor upgrades. neither is schema.
+        keep = [
+            line
+            for line in self.schema_sql.splitlines()
+            if line.strip() and not line.startswith(("\\", "--"))
+        ]
+        return hashlib.sha256("\n".join(keep).encode()).hexdigest()[:12]
 
     def to_json(self) -> dict[str, Any]:
         d = asdict(self)

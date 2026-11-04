@@ -78,10 +78,45 @@ def exponential(xs: Sequence[float], ys: Sequence[float]) -> Curve:
     return lambda x: math.exp(min(ln(x), 700.0))
 
 
+def accelerating(xs: Sequence[float], ys: Sequence[float]) -> Curve:
+    """The insert rate grows exponentially and the table is its running sum.
+
+    dy/dx = exp(a + b x), so y = y_last + (exp(a + b x) - exp(a + b x_last)) / b.
+    b = 0 is plain linear growth. this is what a table looks like when the
+    business behind it grows: more rows per month every month, on top of
+    everything inserted before.
+    """
+    rates, mids = [], []
+    for (x0, y0), (x1, y1) in zip(
+        zip(xs, ys, strict=True), zip(xs[1:], ys[1:], strict=True), strict=False
+    ):
+        if x1 > x0 and y1 > y0:
+            rates.append((y1 - y0) / (x1 - x0))
+            mids.append((x0 + x1) / 2)
+    if len(rates) < 2 or len(rates) < len(xs) - 1:
+        return linear(xs, ys)
+    ln = linfit(mids, [math.log(r) for r in rates])
+    x_last, y_last = xs[-1], ys[-1]
+    a, b = ln.a, ln.b
+    if abs(b) < 1e-9:
+        rate = math.exp(a + b * x_last)
+        return lambda x: y_last + rate * (x - x_last)
+
+    def f(x: float) -> float:
+        return y_last + (math.exp(min(a + b * x, 700.0)) - math.exp(a + b * x_last)) / b
+
+    return f
+
+
 def logistic(xs: Sequence[float], ys: Sequence[float]) -> Curve:
     # straight line in logit space: a share that grows but can never pass 1
     ln = linfit(xs, [logit(y) for y in ys])
     return lambda x: expit(ln(x))
+
+
+# recent forecast origins count more. a curve that was wrong when it only had
+# three points to go on says little about how it does with twelve.
+HALF_LIFE = 3.0
 
 
 def rolling_error(
@@ -89,17 +124,22 @@ def rolling_error(
     ys: Sequence[float],
     fitter: Fitter,
     *,
-    min_train: int = 2,
+    min_train: int | None = None,
     scale: float | None = None,
 ) -> float:
-    """Mean relative one-step-ahead error. Needs at least min_train + 1 points."""
-    errs = []
-    for k in range(min_train, len(xs)):
+    """Weighted mean relative one-step-ahead error."""
+    n = len(xs)
+    if min_train is None:
+        min_train = 2 if n < 6 else 3
+    num = den = 0.0
+    for k in range(min_train, n):
         f = fitter(xs[:k], ys[:k])
         pred, actual = f(xs[k]), ys[k]
         denom = scale if scale is not None else max(abs(actual), 1e-9)
-        errs.append(abs(pred - actual) / denom)
-    return sum(errs) / len(errs) if errs else math.inf
+        w = 0.5 ** ((n - 1 - k) / HALF_LIFE)
+        num += w * abs(pred - actual) / denom
+        den += w
+    return num / den if den else math.inf
 
 
 def choose(

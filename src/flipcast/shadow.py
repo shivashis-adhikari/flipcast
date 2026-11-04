@@ -67,7 +67,7 @@ class Shadow:
         with db.connect(self.dsn, application_name="flipcast-build") as conn:
             for stmt in clean_schema_sql(snap.schema_sql):
                 try:
-                    conn.execute(stmt)  # type: ignore[call-overload]
+                    conn.execute(stmt)
                 except psycopg.Error as e:
                     head = " ".join(stmt.split()[:3]).upper()
                     msg = str(e).strip().splitlines()[0]
@@ -90,14 +90,16 @@ class Shadow:
         rows = conn.execute(
             "select n.nspname, c.relname from pg_class c"
             " join pg_namespace n on n.oid = c.relnamespace"
-            " where c.relkind in ('r', 'm') and n.nspname not in ('pg_catalog', 'information_schema')"
+            " where c.relkind in ('r', 'm')"
+            " and n.nspname not in ('pg_catalog', 'information_schema')"
             " and n.nspname !~ '^pg_toast'"
         ).fetchall()
         for nsp, rel in rows:
             conn.execute(
-                sql.SQL("ALTER TABLE {}.{} SET (autovacuum_enabled = off,"
-                        " toast.autovacuum_enabled = off)").format(
-                    sql.Identifier(nsp), sql.Identifier(rel))
+                sql.SQL(
+                    "ALTER TABLE {}.{} SET (autovacuum_enabled = off,"
+                    " toast.autovacuum_enabled = off)"
+                ).format(sql.Identifier(nsp), sql.Identifier(rel))
             )
         if conn.execute("show autovacuum").fetchone() == ("on",):
             log.info("autovacuum is on for the shadow server; disabled per table instead")
@@ -136,13 +138,17 @@ class Shadow:
                 _restore_table(cur, st, t, snap.server_version_num)
         warnings = notes.take()
         if warnings:
-            raise ShadowError(f"stats restore complained {len(warnings)} times, "
-                              f"first: {warnings[0]}")
+            raise ShadowError(
+                f"stats restore complained {len(warnings)} times, first: {warnings[0]}"
+            )
 
     def drop(self) -> None:
         with db.connect(self.admin_dsn, application_name="flipcast-admin") as admin:
-            admin.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(
-                sql.Identifier(self.database)))
+            admin.execute(
+                sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(
+                    sql.Identifier(self.database)
+                )
+            )
 
 
 def apply_settings(conn: psycopg.Connection[Any], settings: dict[str, str]) -> None:
@@ -163,12 +169,22 @@ def _read_catalog(conn: psycopg.Connection[Any]) -> dict[str, ShadowTable]:
         " and n.nspname !~ '^pg_(toast|temp)'"
     ).fetchall():
         st = ShadowTable(nsp, rel, kind)
-        st.columns = [r[0] for r in conn.execute(
-            "select attname from pg_attribute where attrelid = %s and attnum > 0"
-            " and not attisdropped order by attnum", (oid,)).fetchall()]
-        st.indexes = [r[0] for r in conn.execute(
-            "select c.relname from pg_index i join pg_class c on c.oid = i.indexrelid"
-            " where i.indrelid = %s and c.relkind = 'i'", (oid,)).fetchall()]
+        st.columns = [
+            r[0]
+            for r in conn.execute(
+                "select attname from pg_attribute where attrelid = %s and attnum > 0"
+                " and not attisdropped order by attnum",
+                (oid,),
+            ).fetchall()
+        ]
+        st.indexes = [
+            r[0]
+            for r in conn.execute(
+                "select c.relname from pg_index i join pg_class c on c.oid = i.indexrelid"
+                " where i.indrelid = %s and c.relkind = 'i'",
+                (oid,),
+            ).fetchall()
+        ]
         out[f"{nsp}.{rel}"] = st
     return out
 
@@ -180,19 +196,20 @@ def _call(cur: psycopg.Cursor[Any], fn: str, args: list[tuple[str, Any, str]]) -
             continue
         parts.append(f"'{key}', %s::{typ}")
         params.append(value)
-    cur.execute(f"select pg_catalog.{fn}({', '.join(parts)})", params)  # type: ignore[arg-type]
+    cur.execute(f"select pg_catalog.{fn}({', '.join(parts)})", params)
 
 
 def _clear_table(cur: psycopg.Cursor[Any], st: ShadowTable) -> None:
     cur.execute("select pg_catalog.pg_clear_relation_stats(%s, %s)", (st.schema, st.name))
     for col in st.columns:
         for inh in (False, True):
-            cur.execute("select pg_catalog.pg_clear_attribute_stats(%s, %s, %s, %s)",
-                        (st.schema, st.name, col, inh))
+            cur.execute(
+                "select pg_catalog.pg_clear_attribute_stats(%s, %s, %s, %s)",
+                (st.schema, st.name, col, inh),
+            )
 
 
-def _restore_table(cur: psycopg.Cursor[Any], st: ShadowTable, t: TableStats,
-                   version: int) -> None:
+def _restore_table(cur: psycopg.Cursor[Any], st: ShadowTable, t: TableStats, version: int) -> None:
     rel_args: list[tuple[str, Any, str]] = [
         ("version", version, "integer"),
         ("schemaname", st.schema, "text"),
@@ -201,8 +218,10 @@ def _restore_table(cur: psycopg.Cursor[Any], st: ShadowTable, t: TableStats,
         ("reltuples", float(t.reltuples), "real"),
     ]
     if st.relkind != "p":
-        rel_args += [("relallvisible", int(t.relallvisible), "integer"),
-                     ("relallfrozen", int(t.relallfrozen), "integer")]
+        rel_args += [
+            ("relallvisible", int(t.relallvisible), "integer"),
+            ("relallfrozen", int(t.relallfrozen), "integer"),
+        ]
     _call(cur, "pg_restore_relation_stats", rel_args)
 
     indexes = {ix.name: ix for ix in t.indexes}
@@ -212,28 +231,35 @@ def _restore_table(cur: psycopg.Cursor[Any], st: ShadowTable, t: TableStats,
             # an index that only exists in the shadow (a suggested fix); size
             # it like the table so it isn't free
             continue
-        _call(cur, "pg_restore_relation_stats", [
-            ("version", version, "integer"),
-            ("schemaname", st.schema, "text"),
-            ("relname", name, "text"),
-            ("relpages", int(ix.relpages), "integer"),
-            ("reltuples", float(ix.reltuples), "real"),
-        ])
+        _call(
+            cur,
+            "pg_restore_relation_stats",
+            [
+                ("version", version, "integer"),
+                ("schemaname", st.schema, "text"),
+                ("relname", name, "text"),
+                ("relpages", int(ix.relpages), "integer"),
+                ("reltuples", float(ix.reltuples), "real"),
+            ],
+        )
         for c in ix.expr_stats:
             _restore_column(cur, st.schema, name, c, version)
 
     have = {c.key: c for c in t.columns}
     for col in st.columns:
         for inh in (False, True):
-            cur.execute("select pg_catalog.pg_clear_attribute_stats(%s, %s, %s, %s)",
-                        (st.schema, st.name, col, inh))
-            c = have.get((col, inh))
-            if c is not None:
-                _restore_column(cur, st.schema, st.name, c, version)
+            cur.execute(
+                "select pg_catalog.pg_clear_attribute_stats(%s, %s, %s, %s)",
+                (st.schema, st.name, col, inh),
+            )
+            found = have.get((col, inh))
+            if found is not None:
+                _restore_column(cur, st.schema, st.name, found, version)
 
 
-def _restore_column(cur: psycopg.Cursor[Any], schema: str, rel: str, c: ColumnStats,
-                    version: int) -> None:
+def _restore_column(
+    cur: psycopg.Cursor[Any], schema: str, rel: str, c: ColumnStats, version: int
+) -> None:
     args: list[tuple[str, Any, str]] = [
         ("version", version, "integer"),
         ("schemaname", schema, "text"),
@@ -245,15 +271,16 @@ def _restore_column(cur: psycopg.Cursor[Any], schema: str, rel: str, c: ColumnSt
         ("n_distinct", c.n_distinct, "real"),
     ]
     if c.mcv is not None and c.mcv_freqs:
-        args += [("most_common_vals", c.mcv, "text"),
-                 ("most_common_freqs", c.mcv_freqs, "real[]")]
+        args += [("most_common_vals", c.mcv, "text"), ("most_common_freqs", c.mcv_freqs, "real[]")]
     args += [
         ("histogram_bounds", c.histogram, "text"),
         ("correlation", c.correlation, "real"),
     ]
     if c.most_common_elems is not None and c.most_common_elem_freqs:
-        args += [("most_common_elems", c.most_common_elems, "text"),
-                 ("most_common_elem_freqs", c.most_common_elem_freqs, "real[]")]
+        args += [
+            ("most_common_elems", c.most_common_elems, "text"),
+            ("most_common_elem_freqs", c.most_common_elem_freqs, "real[]"),
+        ]
     args += [
         ("elem_count_histogram", c.elem_count_histogram, "real[]"),
         ("range_length_histogram", c.range_length_histogram, "text"),

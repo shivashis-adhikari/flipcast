@@ -35,19 +35,20 @@ def explain(conn: psycopg.Connection[Any], r: Rendered) -> dict[str, Any]:
             cur.execute("SET LOCAL lock_timeout = '2s'")
             cur.execute("SET LOCAL statement_timeout = '30s'")
             if r.values is None:
-                opts = "GENERIC_PLAN, FORMAT JSON" if sqltext.max_param(r.sql) else "FORMAT JSON"
+                opts = "VERBOSE, FORMAT JSON"
+                if sqltext.max_param(r.sql):
+                    opts = "GENERIC_PLAN, " + opts
                 cur.execute(f"EXPLAIN ({opts}) {r.sql}")
             else:
                 cur.execute(f"PREPARE {_STMT} AS {r.sql}")
                 cur.execute("SET LOCAL plan_cache_mode = force_custom_plan")
-                args = sql.SQL(", ").join(sql.Literal(v) for v in r.values)
-                cur.execute(
-                    sql.SQL("EXPLAIN (FORMAT JSON) EXECUTE {} ({})").format(
-                        sql.Identifier(_STMT), args
-                    )
-                    if r.values
-                    else sql.SQL("EXPLAIN (FORMAT JSON) EXECUTE {}").format(sql.Identifier(_STMT))
-                )
+                stmt = sql.Identifier(_STMT)
+                if r.values:
+                    args = sql.SQL(", ").join(sql.Literal(v) for v in r.values)
+                    q = sql.SQL("EXPLAIN (VERBOSE, FORMAT JSON) EXECUTE {} ({})").format(stmt, args)
+                else:
+                    q = sql.SQL("EXPLAIN (VERBOSE, FORMAT JSON) EXECUTE {}").format(stmt)
+                cur.execute(q)
             row = cur.fetchone()
             if r.values is not None:
                 cur.execute(f"DEALLOCATE {_STMT}")

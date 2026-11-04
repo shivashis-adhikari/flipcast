@@ -87,8 +87,8 @@ where s.dbid = (select oid from pg_database where datname = current_database())
   and s.toplevel
   and s.calls >= %(min_calls)s
   and s.query ~* '^\\s*(with|select|update|delete|insert|table)\\y'
-  -- skip monitoring queries, including our own
-  and s.query !~* '\\ypg_(catalog|stat|class|namespace|settings|attribute|index|am)\\y'
+  -- catalog queries: monitoring, pg_dump, and flipcast itself
+  and s.query !~* '\\ypg_[a-z_]+\\y'
 order by s.total_exec_time desc
 limit %(limit)s
 """
