@@ -1,0 +1,4 @@
+comment = 'planner uses pg_class relation sizes (for empty schema copies)'
+default_version = '0.3'
+module_pathname = '$libdir/flipcast_sizes'
+relocatable = true

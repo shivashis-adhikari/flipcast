@@ -1,0 +1,147 @@
+"""Least squares on short series, and picking between candidate curves.
+
+The series are tiny (one point per snapshot), so everything here is plain
+Python. Candidates are compared by rolling-origin forecast error: fit on the
+first k points, predict point k+1, repeat. In-sample fit would always favor
+the more flexible curve, which is exactly wrong for extrapolation.
+"""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+
+Curve = Callable[[float], float]
+Fitter = Callable[[Sequence[float], Sequence[float]], Curve]
+
+
+@dataclass(frozen=True)
+class Line:
+    a: float
+    b: float
+    se_b: float  # standard error of the slope, inf when unknown
+    n: int
+
+    def __call__(self, x: float) -> float:
+        return self.a + self.b * x
+
+
+def linfit(xs: Sequence[float], ys: Sequence[float]) -> Line:
+    n = len(xs)
+    if n == 0:
+        raise ValueError("no points")
+    my = sum(ys) / n
+    if n == 1:
+        return Line(my, 0.0, math.inf, 1)
+    mx = sum(xs) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx == 0:
+        return Line(my, 0.0, math.inf, n)
+    b = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True)) / sxx
+    a = my - b * mx
+    if n > 2:
+        rss = sum((y - (a + b * x)) ** 2 for x, y in zip(xs, ys, strict=True))
+        se = math.sqrt(rss / (n - 2) / sxx)
+    else:
+        se = math.inf
+    return Line(a, b, se, n)
+
+
+def logit(p: float, eps: float = 1e-6) -> float:
+    p = min(max(p, eps), 1 - eps)
+    return math.log(p / (1 - p))
+
+
+def expit(x: float) -> float:
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    e = math.exp(x)
+    return e / (1.0 + e)
+
+
+def constant(xs: Sequence[float], ys: Sequence[float]) -> Curve:
+    # the latest value, not the mean: if nothing is trending, the newest
+    # observation is the best guess for tomorrow
+    v = ys[-1]
+    return lambda _x: v
+
+
+def linear(xs: Sequence[float], ys: Sequence[float]) -> Curve:
+    return linfit(xs, ys)
+
+
+def exponential(xs: Sequence[float], ys: Sequence[float]) -> Curve:
+    if any(y <= 0 for y in ys):
+        return linear(xs, ys)
+    ln = linfit(xs, [math.log(y) for y in ys])
+    return lambda x: math.exp(min(ln(x), 700.0))
+
+
+def logistic(xs: Sequence[float], ys: Sequence[float]) -> Curve:
+    # straight line in logit space: a share that grows but can never pass 1
+    ln = linfit(xs, [logit(y) for y in ys])
+    return lambda x: expit(ln(x))
+
+
+def rolling_error(
+    xs: Sequence[float],
+    ys: Sequence[float],
+    fitter: Fitter,
+    *,
+    min_train: int = 2,
+    scale: float | None = None,
+) -> float:
+    """Mean relative one-step-ahead error. Needs at least min_train + 1 points."""
+    errs = []
+    for k in range(min_train, len(xs)):
+        f = fitter(xs[:k], ys[:k])
+        pred, actual = f(xs[k]), ys[k]
+        denom = scale if scale is not None else max(abs(actual), 1e-9)
+        errs.append(abs(pred - actual) / denom)
+    return sum(errs) / len(errs) if errs else math.inf
+
+
+def choose(
+    xs: Sequence[float],
+    ys: Sequence[float],
+    candidates: list[tuple[str, Fitter]],
+    *,
+    scale: float | None = None,
+    slack: float = 0.1,
+) -> tuple[str, Curve]:
+    """Pick the candidate with the lowest rolling error.
+
+    candidates go simplest first. a more complex one has to beat every simpler
+    one by `slack` (relative) to be picked, so two snapshots that differ by
+    noise don't produce a confident trend.
+    """
+    if len(xs) < 3:
+        name, fitter = candidates[0] if len(xs) < 2 else candidates[min(1, len(candidates) - 1)]
+        return name, fitter(xs, ys)
+    best_name, best_fit = candidates[0]
+    best_err = rolling_error(xs, ys, best_fit, scale=scale)
+    for name, fitter in candidates[1:]:
+        err = rolling_error(xs, ys, fitter, scale=scale)
+        if err < best_err * (1 - slack) - 1e-12:
+            best_name, best_fit, best_err = name, fitter, err
+    return best_name, best_fit(xs, ys)
+
+
+def interp(x: float, xs: Sequence[float], ys: Sequence[float]) -> float:
+    """Piecewise linear interpolation, xs ascending. Clamps at the ends."""
+    if x <= xs[0]:
+        return ys[0]
+    if x >= xs[-1]:
+        return ys[-1]
+    lo, hi = 0, len(xs) - 1
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if xs[mid] <= x:
+            lo = mid
+        else:
+            hi = mid
+    span = xs[hi] - xs[lo]
+    if span == 0:
+        return ys[hi]
+    return ys[lo] + (ys[hi] - ys[lo]) * (x - xs[lo]) / span
